@@ -46,4 +46,3 @@ def parse_into_expr(
         expr = pl.lit(expr, dtype=dtype)
 
     return expr
-

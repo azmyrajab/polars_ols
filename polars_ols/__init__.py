@@ -1,7 +1,9 @@
-import polars as pl
-from polars_ols.least_squares import pl_least_squares
 from functools import reduce
 from typing import Sequence
+
+import polars as pl
+
+from polars_ols.least_squares import pl_least_squares
 
 __all__ = [
     "pl_least_squares",
@@ -10,13 +12,16 @@ __all__ = [
 ]
 
 
-def _build_expressions_from_patsy_formula(formula: str, include_dependent_variable: bool = False
-                                          ) -> (Sequence[pl.Expr], bool):
+def _build_expressions_from_patsy_formula(
+    formula: str, include_dependent_variable: bool = False
+) -> (Sequence[pl.Expr], bool):
     try:
         import patsy as pa
-    except ImportError:
-        raise NotImplementedError("'patsy' needs to be installed in your python environment in order to use "
-                                  "formula api")
+    except ImportError as e:
+        raise NotImplementedError(
+            "'patsy' needs to be installed in your python environment in order to use "
+            "formula api"
+        ) from e
     desc = pa.ModelDesc.from_formula(formula)
 
     if include_dependent_variable:
@@ -31,7 +36,9 @@ def _build_expressions_from_patsy_formula(formula: str, include_dependent_variab
     expressions = []
     for term in terms:
         if any("C(" in f.code for f in term.factors):
-            raise NotImplementedError("building patsy categories into polars expressions is not supported")
+            raise NotImplementedError(
+                "building patsy categories into polars expressions is not supported"
+            )
         if len(term.factors) == 1:
             expressions.append(pl.col(term.factors[0].code))
         elif len(term.factors) >= 2:
@@ -41,8 +48,10 @@ def _build_expressions_from_patsy_formula(formula: str, include_dependent_variab
 
 
 def pl_least_squares_from_formula(formula: str, **kwargs) -> pl.Expr:
-    expressions, add_intercept = _build_expressions_from_patsy_formula(formula, include_dependent_variable=True)
-    return pl_least_squares(expressions[0], *expressions[1:],  add_intercept=add_intercept, **kwargs)
+    expressions, add_intercept = _build_expressions_from_patsy_formula(
+        formula, include_dependent_variable=True
+    )
+    return pl_least_squares(expressions[0], *expressions[1:], add_intercept=add_intercept, **kwargs)
 
 
 @pl.api.register_expr_namespace("least_squares")
@@ -63,5 +72,7 @@ class LeastSquares:
         return self.least_squares(*features, ridge_alpha=alpha)
 
     def from_formula(self, formula: str, **kwargs) -> pl.Expr:
-        features, add_intercept = _build_expressions_from_patsy_formula(formula, include_dependent_variable=False)
+        features, add_intercept = _build_expressions_from_patsy_formula(
+            formula, include_dependent_variable=False
+        )
         return self.least_squares(*features, add_intercept=add_intercept, **kwargs)

@@ -1,11 +1,10 @@
-use polars::prelude::{Series, PolarsResult, NamedFromOwned, polars_err};
-use pyo3_polars::derive::polars_expr;
-use ndarray::prelude::{Array, Array1, Array2, Axis, s, NewAxis};
-use ndarray_linalg::{LeastSquaresSvd, SVD, Solve};
-use serde::Deserialize;
-use faer::prelude::{SpSolverLstsq};
+use faer::prelude::SpSolverLstsq;
 use faer_ext::{IntoFaer, IntoNdarray};
-
+use ndarray::prelude::{s, Array, Array1, Array2, Axis, NewAxis};
+use ndarray_linalg::{LeastSquaresSvd, Solve, SVD};
+use polars::prelude::{polars_err, NamedFromOwned, PolarsResult, Series};
+use pyo3_polars::derive::polars_expr;
+use serde::Deserialize;
 
 /// Convert a slice of polars series into target & feature ndarray objects.
 pub fn convert_polars_to_ndarray(inputs: &[Series]) -> (Array1<f32>, Array2<f32>) {
@@ -24,8 +23,10 @@ pub fn convert_polars_to_ndarray(inputs: &[Series]) -> (Array1<f32>, Array2<f32>
 
     // note that this was faster than converting polars series -> polars dataframe -> to_ndarray
     let mut x: Array<f32, _> = Array::zeros((n, m - 1));
-    x.axis_iter_mut(Axis(1)).into_iter().enumerate().for_each(
-        |(j, mut col)| {
+    x.axis_iter_mut(Axis(1))
+        .into_iter()
+        .enumerate()
+        .for_each(|(j, mut col)| {
             // Convert Series to ndarray
             let s = inputs[j + 1]
                 .f32()
@@ -36,7 +37,6 @@ pub fn convert_polars_to_ndarray(inputs: &[Series]) -> (Array1<f32>, Array2<f32>
         });
     (y, x)
 }
-
 
 /// Solves an ordinary least squares problem using ndarray and LAPACK SGELSD.
 /// Inputs: features (2d ndarray), targets (1d ndarray)
@@ -56,20 +56,29 @@ pub fn solve_ols_qr(y: &Array1<f32>, x: &Array2<f32>) -> Array1<f32> {
     let x_faer = x.view().into_faer();
     let y_faer = y.slice(s![.., NewAxis]).into_faer();
     let coefficients = x_faer.qr().solve_lstsq(&y_faer);
-    coefficients.as_ref().into_ndarray().slice(s![.., 0]).to_owned()
+    coefficients
+        .as_ref()
+        .into_ndarray()
+        .slice(s![.., 0])
+        .to_owned()
 }
-
 
 /// Solves a ridge regression problem of the form: ||y - x B|| + alpha * ||B||
 /// Inputs: features (2d ndarray), targets (1d ndarray), ridge alpha scalar, & solve method string
-///
-pub fn solve_ridge(y: &Array1<f32>, x: &Array2<f32>, alpha: f32,
-                   method: Option<&str>) -> Array1<f32> {
+pub fn solve_ridge(
+    y: &Array1<f32>,
+    x: &Array2<f32>,
+    alpha: f32,
+    method: Option<&str>,
+) -> Array1<f32> {
     assert!(alpha > 0., "alpha must be strictly positive");
 
     // default to directly solving normal equations if un-specified
     let method = method.unwrap_or("solve");
-    assert!(["solve", "svd"].contains(&method), "'method' must be either 'solve' or 'svd'");
+    assert!(
+        ["solve", "svd"].contains(&method),
+        "'method' must be either 'solve' or 'svd'"
+    );
 
     let k = std::cmp::min(x.shape()[1], x.shape()[0]);
 
@@ -90,7 +99,9 @@ pub fn solve_ridge(y: &Array1<f32>, x: &Array2<f32>, alpha: f32,
             let x_t_y = x_t.dot(y);
             let eye = Array::eye(x_t_x.shape()[0]);
             let ridge_matrix = &x_t_x + &eye * alpha;
-            ridge_matrix.solve(&x_t_y).expect("failed to solve least squares")
+            ridge_matrix
+                .solve(&x_t_y)
+                .expect("failed to solve least squares")
         }
         _ => {
             panic!("unsupported solve method {method} passed")
@@ -99,17 +110,16 @@ pub fn solve_ridge(y: &Array1<f32>, x: &Array2<f32>, alpha: f32,
     coefficients
 }
 
-
 #[derive(Deserialize)]
 pub struct OLSKwargs {
     ridge_alpha: f32,
     ridge_solve_method: String,
 }
 
+/// Computes linear predictions and returns a polars series.
 fn make_predictions(features: &Array2<f32>, coefficients: Array1<f32>) -> Series {
     Series::from_vec("predictions", features.dot(&coefficients).to_vec())
 }
-
 
 #[polars_expr(output_type = Float32)]
 fn pl_least_squares(inputs: &[Series], kwargs: OLSKwargs) -> PolarsResult<Series> {
