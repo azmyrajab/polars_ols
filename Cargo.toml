@@ -15,7 +15,7 @@ serde = { version = "*", features = ["derive"] }
 polars = { version = "*", features = ["performant", "lazy", "ndarray"]}
 ndarray = { version = "*", features=["blas", "rayon"] }
 blas-src = { version = "*", features = ["openblas"] }
-openblas-src = { version = "*", features = ["cblas", "system"] } # use ["cblas", "system"] if available on system
+openblas-src = { version = "*", features = ["cblas"] } # use ["cblas", "system"] if available on system
 ndarray-rand = {version = "*"}
 ndarray-linalg = {version = "*" , features = ["openblas-static"]}
 faer = {version = "*"}
