@@ -18,7 +18,7 @@ dependencies = [
 ]
 keywords = ["polars-extension", "linear-regression"]
 
-  [project.optional-dependencies]
+[project.optional-dependencies]
 dev = [
   "numpy",
   "pytest >= 7.4.1",
@@ -30,8 +30,8 @@ dev = [
 target-version = "py310"
 line-length = 100
 fix = true
-unfixable = []
-select = [
+lint.unfixable = []
+lint.select = [
   # pyflakes
   "F",
   # pycodestyle
@@ -65,14 +65,15 @@ select = [
   # Ruff-specific rules
   "RUF",
 ]
-ignore = [
+lint.ignore = [
   "PLR2004",
   "B008",
   # flake8 ignores
   "F403",
   "F401",
+  "ISC001",
 ]
-
+lint.pylint.max-args = 6
 
 [tool.black]
 target-version = ["py310", "py311"]

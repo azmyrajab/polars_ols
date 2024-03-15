@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import reduce
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING, Sequence, Tuple
 
 import polars as pl
 
@@ -51,7 +51,7 @@ def parse_into_expr(
 
 def build_expressions_from_patsy_formula(
     formula: str, include_dependent_variable: bool = False
-) -> (Sequence[pl.Expr], bool):
+) -> Tuple[Sequence[pl.Expr], bool]:
     try:
         import patsy as pa
     except ImportError as e:

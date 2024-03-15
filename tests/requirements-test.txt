@@ -1,5 +1,5 @@
 # requirements for testing
-maturin[patchelf]
+maturin
 polars
 numpy
 pytest

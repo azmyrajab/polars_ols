@@ -1,11 +1,6 @@
 mod expressions;
-
-#[cfg(target_os = "linux")]
-use jemallocator::Jemalloc;
-
-#[global_allocator]
-#[cfg(target_os = "linux")]
-static ALLOC: Jemalloc = Jemalloc;
+use pyo3::types::PyModule;
+use pyo3::{pymodule, PyResult, Python};
 
 #[cfg(test)]
 mod tests {
@@ -62,4 +57,18 @@ mod tests {
         let expected = array![0.999, 0.999];
         assert_close_l2!(&coefficients, &expected, 0.001);
     }
+}
+
+#[cfg(target_os = "linux")]
+use jemallocator::Jemalloc;
+
+#[global_allocator]
+#[cfg(target_os = "linux")]
+static ALLOC: Jemalloc = Jemalloc;
+
+#[pymodule]
+#[pyo3(name = "polars_ols")]
+fn _internal(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
+    Ok(())
 }

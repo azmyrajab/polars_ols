@@ -1,3 +1,4 @@
+#![allow(clippy::unit_arg, clippy::unused_unit)]
 use faer::prelude::SpSolverLstsq;
 use faer_ext::{IntoFaer, IntoNdarray};
 use ndarray::prelude::{s, Array, Array1, Array2, Axis, NewAxis};
@@ -24,7 +25,6 @@ pub fn convert_polars_to_ndarray(inputs: &[Series]) -> (Array1<f32>, Array2<f32>
     // note that this was faster than converting polars series -> polars dataframe -> to_ndarray
     let mut x: Array<f32, _> = Array::zeros((n, m - 1));
     x.axis_iter_mut(Axis(1))
-        .into_iter()
         .enumerate()
         .for_each(|(j, mut col)| {
             // Convert Series to ndarray
@@ -44,7 +44,7 @@ pub fn convert_polars_to_ndarray(inputs: &[Series]) -> (Array1<f32>, Array2<f32>
 #[allow(dead_code)]
 pub fn solve_ols_lapack(y: &Array1<f32>, x: &Array2<f32>) -> Array1<f32> {
     // compute least squares solution via LAPACK SGELSD (divide and conquer SVD)
-    let solution = x.least_squares(&y).expect("failed to solve least squares");
+    let solution = x.least_squares(y).expect("failed to solve least squares");
     solution.solution
 }
 
@@ -122,7 +122,7 @@ fn make_predictions(features: &Array2<f32>, coefficients: Array1<f32>) -> Series
 
 #[polars_expr(output_type = Float32)]
 fn pl_least_squares(inputs: &[Series], kwargs: OLSKwargs) -> PolarsResult<Series> {
-    let (y, x) = convert_polars_to_ndarray(&inputs);
+    let (y, x) = convert_polars_to_ndarray(inputs);
     let alpha = kwargs.ridge_alpha;
     assert!(alpha >= 0., "alpha must be strictly positive or zero");
     if alpha > 0. {
