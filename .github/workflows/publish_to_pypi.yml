@@ -53,19 +53,10 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-      - name: Test
-        run: |
-          python -m pip install --upgrade pip
-          pip install pytest
-          pip install .
-          pip install -r tests/requirements-test.txt
-          pytest tests/test_ols.py
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
-          
           target: ${{ matrix.target }}
-          
           args: --release --out dist --find-interpreter
           sccache: 'true'
           manylinux: auto
@@ -74,6 +65,13 @@ jobs:
         with:
           name: wheels
           path: dist
+      - name: Run pytest
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+          pip install .
+          pip install -r tests/requirements-test.txt
+          pytest tests/test_ols.py
 
   macos:
     runs-on: macos-latest
@@ -88,9 +86,7 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
-          
           target: ${{ matrix.target }}
-          
           args: --release --out dist --find-interpreter
           sccache: 'true'
       - name: Upload wheels

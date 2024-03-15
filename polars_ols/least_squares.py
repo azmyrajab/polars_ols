@@ -43,12 +43,10 @@ def pl_least_squares(
         )
         / sqrt_w
     )  # undo the sqrt(w) scaling implicit in predictions (:= scaled_features @ coef)
-
-    match mode:
-        case "predictions":
-            return predictions
-        case "residuals":
-            return (target - predictions).alias("residuals")
+    if mode == "predictions":
+        return predictions
+    else:
+        return (target - predictions).alias("residuals")
 
 
 def pl_least_squares_from_formula(formula: str, **kwargs) -> pl.Expr:
