@@ -1,5 +1,6 @@
+maturin[patchelf]
 polars
-maturin
+pre-commit
 black
 ruff
 pytest

@@ -44,8 +44,7 @@ pub fn convert_polars_to_ndarray(inputs: &[Series]) -> (Array1<f32>, Array2<f32>
 #[allow(dead_code)]
 pub fn solve_ols_lapack(y: &Array1<f32>, x: &Array2<f32>) -> Array1<f32> {
     // compute least squares solution via LAPACK SGELSD (divide and conquer SVD)
-    let solution = x.least_squares(&y).expect(
-        "failed to solve least squares");
+    let solution = x.least_squares(&y).expect("failed to solve least squares");
     solution.solution
 }
 
@@ -85,8 +84,7 @@ pub fn solve_ridge(
 
     let coefficients = match method {
         "svd" => {
-            let (u, s, v) = x.svd(
-                true, true).unwrap();
+            let (u, s, v) = x.svd(true, true).unwrap();
             let u = u.unwrap();
             let v = v.unwrap();
             let ut_y = u.slice(s![.., ..k]).t().dot(y);

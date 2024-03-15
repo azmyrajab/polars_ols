@@ -39,8 +39,7 @@ mod tests {
     #[test]
     fn test_ols_lapack() {
         let (y, x1, x2) = make_data();
-        let (targets, features) = convert_polars_to_ndarray(
-            &[y.clone(), x1, x2]);
+        let (targets, features) = convert_polars_to_ndarray(&[y.clone(), x1, x2]);
         let coefficients = solve_ols_lapack(&targets, &features);
         let expected = array![1., 1.];
         assert_close_l2!(&coefficients, &expected, 0.001);
@@ -49,8 +48,7 @@ mod tests {
     #[test]
     fn test_ols_qr() {
         let (y, x1, x2) = make_data();
-        let (targets, features) = convert_polars_to_ndarray(
-            &[y.clone(), x1, x2]);
+        let (targets, features) = convert_polars_to_ndarray(&[y.clone(), x1, x2]);
         let coefficients = solve_ols_qr(&targets, &features);
         let expected = array![1., 1.];
         assert_close_l2!(&coefficients, &expected, 0.001);
@@ -59,8 +57,7 @@ mod tests {
     #[test]
     fn test_ridge() {
         let (y, x1, x2) = make_data();
-        let (targets, features) = convert_polars_to_ndarray(
-            &[y.clone(), x1, x2]);
+        let (targets, features) = convert_polars_to_ndarray(&[y.clone(), x1, x2]);
         let coefficients = solve_ridge(&targets, &features, 1_000.0, Some("svd"));
         let expected = array![0.999, 0.999];
         assert_close_l2!(&coefficients, &expected, 0.001);
