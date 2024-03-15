@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from functools import reduce
+from typing import TYPE_CHECKING, Sequence
 
 import polars as pl
 
@@ -46,3 +47,38 @@ def parse_into_expr(
         expr = pl.lit(expr, dtype=dtype)
 
     return expr
+
+
+def build_expressions_from_patsy_formula(
+    formula: str, include_dependent_variable: bool = False
+) -> (Sequence[pl.Expr], bool):
+    try:
+        import patsy as pa
+    except ImportError as e:
+        raise NotImplementedError(
+            "'patsy' needs to be installed in your python environment in order to use "
+            "formula api"
+        ) from e
+    desc = pa.ModelDesc.from_formula(formula)
+
+    if include_dependent_variable:
+        assert len(desc.lhs_termlist) == 1, "must provide exactly one LHS variable"
+        terms = desc.lhs_termlist + desc.rhs_termlist
+    else:
+        assert len(desc.lhs_termlist) == 0, "can not provide LHS variables in this context"
+        terms = desc.rhs_termlist
+
+    add_intercept: bool = "-1" not in formula
+
+    expressions = []
+    for term in terms:
+        if any("C(" in f.code for f in term.factors):
+            raise NotImplementedError(
+                "building patsy categories into polars expressions is not supported"
+            )
+        if len(term.factors) == 1:
+            expressions.append(pl.col(term.factors[0].code))
+        elif len(term.factors) >= 2:
+            expr = reduce((lambda x, y: x * pl.col(y)), (f.code for f in term.factors), pl.lit(1))
+            expressions.append(expr.alias(":".join(f.code for f in term.factors)))
+    return expressions, add_intercept

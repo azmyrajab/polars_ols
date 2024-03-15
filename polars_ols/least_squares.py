@@ -4,11 +4,11 @@ import polars as pl
 from polars.type_aliases import IntoExpr
 from polars.utils.udfs import _get_shared_lib_location
 
-from polars_ols.utils import parse_into_expr
+from polars_ols.utils import parse_into_expr, build_expressions_from_patsy_formula
 
 lib = _get_shared_lib_location(__file__)
 
-__all__ = ["pl_least_squares"]
+__all__ = ["pl_least_squares", "pl_least_squares_from_formula"]
 
 
 def pl_least_squares(
@@ -41,3 +41,10 @@ def pl_least_squares(
         )
         / sqrt_w
     )  # undo the sqrt(w) scaling implicit in predictions (:= scaled_features @ coef)
+
+
+def pl_least_squares_from_formula(formula: str, **kwargs) -> pl.Expr:
+    expressions, add_intercept = build_expressions_from_patsy_formula(
+        formula, include_dependent_variable=True
+    )
+    return pl_least_squares(expressions[0], *expressions[1:], add_intercept=add_intercept, **kwargs)

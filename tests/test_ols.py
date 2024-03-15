@@ -4,8 +4,7 @@ from contextlib import contextmanager
 import polars as pl
 import numpy as np
 
-from polars_ols import pl_least_squares_from_formula
-from polars_ols.least_squares import pl_least_squares
+from polars_ols import pl_least_squares_from_formula, pl_least_squares
 import statsmodels.formula.api as smf
 
 
