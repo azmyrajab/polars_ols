@@ -1,0 +1,5 @@
+polars
+maturin
+ruff
+pytest
+
