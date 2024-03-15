@@ -10,3 +10,81 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: CPython",
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+fix = true
+unfixable = []
+select = [
+  # pyflakes
+  "F",
+  # pycodestyle
+  "E", "W",
+  # flake8-2020
+  "YTT",
+  # flake8-bugbear
+  "B",
+  # flake8-quotes
+  "Q",
+  # flake8-debugger
+  "T10",
+  # flake8-gettext
+  "INT",
+  # pylint
+  "PLC", "PLE", "PLR", "PLW",
+  # misc lints
+  "PIE",
+  # flake8-pyi
+  "PYI",
+  # tidy imports
+  "TID",
+  # implicit string concatenation
+  "ISC",
+  # type-checking imports
+  "TCH",
+  # comprehensions
+  "C4",
+  # pygrep-hooks
+  "PGH",
+  # Ruff-specific rules
+  "RUF",
+]
+ignore = [
+  "PLR2004",
+  "B008",
+  # flake8 ignores
+  "F403",
+  "F401",
+]
+
+
+[tool.black]
+target-version = ["py310", "py311"]
+line-length = 100
+include = '\.pyi?$' # All Python files
+exclude = '''
+(
+    asv_bench/env
+  | \.egg
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.nox
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+  | setup.py
+)
+'''
+
+[tool.isort]
+profile = "black"
+
+[tool.autopep8]
+in-place = true
+aggressive = 3
+max_line_length = 100

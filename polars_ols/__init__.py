@@ -26,7 +26,7 @@ def _build_expressions_from_patsy_formula(formula: str, include_dependent_variab
         assert len(desc.lhs_termlist) == 0, "can not provide LHS variables in this context"
         terms = desc.rhs_termlist
 
-    add_intercept: bool = not("-1" in formula)
+    add_intercept: bool = "-1" not in formula
 
     expressions = []
     for term in terms:
