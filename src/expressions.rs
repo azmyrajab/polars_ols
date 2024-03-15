@@ -131,13 +131,13 @@ fn _get_least_squares_coefficients(
     );
     if kwargs.ridge_alpha > 0. {
         solve_ridge(
-            &targets,
-            &features,
+            targets,
+            features,
             kwargs.ridge_alpha,
             Some(&kwargs.ridge_solve_method),
         )
     } else {
-        solve_ols_qr(&targets, &features)
+        solve_ols_qr(targets, features)
     }
 }
 

@@ -17,7 +17,7 @@ ndarray = { version = "*", features=["rayon", "blas"] }
 #blas-src = { version = "*", features = ["openblas"] }
 #openblas-src = { version = "*", features = ["cblas"] }
 ndarray-rand = {version = "*"}
-ndarray-linalg = {version = "*", features = ["openblas-static"] }
+ndarray-linalg = {version = "*", features = ["openblas-static"]}
 faer = {version = "*"}
 faer-ext = {version = "*", features = ["ndarray"]}
 rayon = {version = "*"}
