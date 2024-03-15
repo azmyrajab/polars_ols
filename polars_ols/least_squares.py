@@ -18,7 +18,9 @@ def pl_least_squares(
     sample_weights: pl.Expr | None = None,
     ridge_solve_method: Literal["svd", "solve"] = "solve",
     add_intercept: bool = False,
+    mode: Literal["predictions", "residuals"] = "predictions",
 ) -> pl.Expr:
+    assert mode in {"predictions", "residuals"}  # TODO: support coefficients
     target = parse_into_expr(target).cast(pl.Float32)
     features = [f.cast(pl.Float32) for f in features]
     if add_intercept:
@@ -28,7 +30,7 @@ def pl_least_squares(
         sqrt_w = sample_weights.cast(pl.Float32).sqrt()
         target *= sqrt_w
         features = [expr * sqrt_w for expr in features]
-    return (
+    predictions = (
         target.register_plugin(
             lib=lib,
             symbol="pl_least_squares",
@@ -41,6 +43,12 @@ def pl_least_squares(
         )
         / sqrt_w
     )  # undo the sqrt(w) scaling implicit in predictions (:= scaled_features @ coef)
+
+    match mode:
+        case "predictions":
+            return predictions
+        case "residuals":
+            return (target - predictions).alias("residuals")
 
 
 def pl_least_squares_from_formula(formula: str, **kwargs) -> pl.Expr:
