@@ -3,3 +3,6 @@ maturin
 ruff
 pytest
 
+# tests
+numpy
+statsmodels
