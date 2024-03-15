@@ -83,8 +83,3 @@ exclude = '''
 
 [tool.isort]
 profile = "black"
-
-[tool.autopep8]
-in-place = true
-aggressive = 3
-max_line_length = 100

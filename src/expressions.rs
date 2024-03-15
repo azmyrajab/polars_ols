@@ -41,6 +41,7 @@ pub fn convert_polars_to_ndarray(inputs: &[Series]) -> (Array1<f32>, Array2<f32>
 /// Solves an ordinary least squares problem using ndarray and LAPACK SGELSD.
 /// Inputs: features (2d ndarray), targets (1d ndarray)
 /// Outputs: 1-d OLS coefficients
+#[allow(dead_code)]
 pub fn solve_ols_lapack(y: &Array1<f32>, x: &Array2<f32>) -> Array1<f32> {
     // compute least squares solution via LAPACK SGELSD (divide and conquer SVD)
     let solution = x.least_squares(&y).expect(
