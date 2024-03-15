@@ -17,14 +17,14 @@ class LeastSquares:
     def least_squares(self, *features: pl.Expr, **kwargs) -> pl.Expr:
         return pl_least_squares(self._expr, *features, **kwargs)
 
-    def ols(self, *features: pl.Expr) -> pl.Expr:
-        return self.least_squares(*features)
+    def ols(self, *features: pl.Expr, **kwargs) -> pl.Expr:
+        return self.least_squares(*features, **kwargs)
 
-    def wls(self, *features: pl.Expr, sample_weights: pl.Expr) -> pl.Expr:
-        return self.least_squares(*features, sample_weights=sample_weights)
+    def wls(self, *features: pl.Expr, sample_weights: pl.Expr, **kwargs) -> pl.Expr:
+        return self.least_squares(*features, sample_weights=sample_weights, **kwargs)
 
-    def ridge(self, *features: pl.Expr, alpha: float) -> pl.Expr:
-        return self.least_squares(*features, ridge_alpha=alpha)
+    def ridge(self, *features: pl.Expr, alpha: float, **kwargs) -> pl.Expr:
+        return self.least_squares(*features, ridge_alpha=alpha, **kwargs)
 
     def from_formula(self, formula: str, **kwargs) -> pl.Expr:
         features, add_intercept = build_expressions_from_patsy_formula(

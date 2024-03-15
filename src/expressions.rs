@@ -2,7 +2,7 @@
 use faer::prelude::SpSolverLstsq;
 use faer_ext::{IntoFaer, IntoNdarray};
 use ndarray::prelude::{s, Array, Array1, Array2, Axis, NewAxis};
-use ndarray_linalg::{LeastSquaresSvd, Solve, SVD};
+use ndarray_linalg::{LeastSquaresSvd, SolveC, SVD};
 use polars::prelude::{polars_err, NamedFromOwned, PolarsResult, Series};
 use pyo3_polars::derive::polars_expr;
 use serde::Deserialize;
@@ -99,8 +99,8 @@ pub fn solve_ridge(
             let eye = Array::eye(x_t_x.shape()[0]);
             let ridge_matrix = &x_t_x + &eye * alpha;
             ridge_matrix
-                .solve(&x_t_y)
-                .expect("failed to solve least squares")
+                .solvec(&x_t_y)
+                .expect("failed to solve normal equations (cholesky)")
         }
         _ => {
             panic!("unsupported solve method {method} passed")
@@ -120,16 +120,39 @@ fn make_predictions(features: &Array2<f32>, coefficients: Array1<f32>) -> Series
     Series::from_vec("predictions", features.dot(&coefficients).to_vec())
 }
 
+fn _get_least_squares_coefficients(
+    targets: &Array1<f32>,
+    features: &Array2<f32>,
+    kwargs: OLSKwargs,
+) -> Array1<f32> {
+    assert!(
+        kwargs.ridge_alpha >= 0.,
+        "alpha must be strictly positive or zero"
+    );
+    if kwargs.ridge_alpha > 0. {
+        solve_ridge(
+            &targets,
+            &features,
+            kwargs.ridge_alpha,
+            Some(&kwargs.ridge_solve_method),
+        )
+    } else {
+        solve_ols_qr(&targets, &features)
+    }
+}
+
 #[polars_expr(output_type = Float32)]
 fn pl_least_squares(inputs: &[Series], kwargs: OLSKwargs) -> PolarsResult<Series> {
     let (y, x) = convert_polars_to_ndarray(inputs);
-    let alpha = kwargs.ridge_alpha;
-    assert!(alpha >= 0., "alpha must be strictly positive or zero");
-    if alpha > 0. {
-        let coefficients = solve_ridge(&y, &x, alpha, Some(&kwargs.ridge_solve_method));
-        Ok(make_predictions(&x, coefficients))
-    } else {
-        let coefficients = solve_ols_qr(&y, &x);
-        Ok(make_predictions(&x, coefficients))
-    }
+    let coefficients = _get_least_squares_coefficients(&y, &x, kwargs);
+    Ok(make_predictions(&x, coefficients))
+}
+
+#[polars_expr(output_type = Float32)]
+fn pl_least_squares_coefficients(inputs: &[Series], kwargs: OLSKwargs) -> PolarsResult<Series> {
+    let (y, x) = convert_polars_to_ndarray(inputs);
+    Ok(Series::from_vec(
+        "coefficients",
+        _get_least_squares_coefficients(&y, &x, kwargs).to_vec(),
+    ))
 }

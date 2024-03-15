@@ -30,13 +30,13 @@ def _make_data(n: int = 10_000):
 
 def test_ols():
     df = _make_data()
-    # compute OLS solution w/ polars (lstsq in rust)
+    # compute OLS solution w/ polars (via QR in rust) [2.331s]
     with timer("OLS rust"):
         for _ in range(1_000):
             expr = pl_least_squares(pl.col("y"), pl.col("x1"), pl.col("x2")).alias("predictions")
             df = df.lazy().with_columns(expr).collect()
 
-    # compute OLS w/ lstsq numpy
+    # compute OLS w/ lstsq numpy [4.583s]
     with timer("OLS numpy"):
         for _ in range(1_000):
             x, y = df.select("x1", "x2").to_numpy(), df.select("y").to_numpy().flatten()
@@ -44,6 +44,24 @@ def test_ols():
             df = df.with_columns(predictions2=pl.lit(x @ coef).flatten())
 
     assert np.allclose(df["predictions"], df["predictions2"], atol=1.0e-4, rtol=1.0e-4)
+
+
+def test_ols_coefficients():
+    df = _make_data()
+    coef = df.select(
+        pl.col("y").least_squares.from_formula("x1 + x2 -1", mode="coefficients")
+    ).to_numpy()
+    assert np.allclose(coef, [1.0, 1.0], atol=1.0e-3, rtol=1.0e-3)
+
+
+def test_ols_residuals():
+    df = _make_data()
+    residuals = df.select(
+        pl.col("y").least_squares.from_formula("x1 + x2 -1", mode="residuals")
+    ).to_numpy()
+    x, y = df.select("x1", "x2").to_numpy(), df["y"].to_numpy()
+    coef = np.linalg.lstsq(x, y, rcond=None)[0]
+    assert np.allclose(residuals.flatten(), y - x @ coef, rtol=1.0e-4, atol=1.0e-4)
 
 
 def test_ols_intercept():
@@ -64,16 +82,15 @@ def test_least_squares_from_formula():
     expr = pl_least_squares_from_formula(
         "y ~ x1 + x2",  # patsy includes intercept by default
         sample_weights=pl.col("sample_weights"),
-        ridge_alpha=0.01,
     ).alias("predictions")
 
     expected = (
         smf.wls("y ~ x1 + x2", data=df, weights=df["sample_weights"].to_numpy())
-        .fit_regularized(L1_wt=0.0, alpha=0.01, opt_method="bfgs")
+        .fit()
         .predict(df)
         .to_numpy()
     )
-    assert np.allclose(df.select(expr).to_numpy().flatten(), expected, rtol=1.0e-2, atol=1.0e-3)
+    assert np.allclose(df.select(expr).to_numpy().flatten(), expected, rtol=1.0e-4, atol=1.0e-4)
 
 
 def test_ridge():
@@ -98,7 +115,7 @@ def test_ridge():
             ).alias("predictions")
             df = df.lazy().with_columns(expr).collect()
 
-    assert np.allclose(df["predictions"].to_numpy(), expected, rtol=1.0e-5, atol=1.0e-5)
+    assert np.allclose(df["predictions"].to_numpy(), expected, rtol=1.0e-4, atol=1.0e-4)
 
 
 def test_wls():

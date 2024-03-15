@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, Optional
 
 import polars as pl
 from polars.type_aliases import IntoExpr
@@ -15,12 +15,12 @@ def pl_least_squares(
     target: IntoExpr,
     *features: pl.Expr,
     ridge_alpha: float = 0.0,
-    sample_weights: pl.Expr | None = None,
+    sample_weights: Optional[pl.Expr] = None,
     ridge_solve_method: Literal["svd", "solve"] = "solve",
     add_intercept: bool = False,
-    mode: Literal["predictions", "residuals"] = "predictions",
+    mode: Literal["predictions", "residuals", "coefficients"] = "predictions",
 ) -> pl.Expr:
-    assert mode in {"predictions", "residuals"}  # TODO: support coefficients
+    assert mode in {"predictions", "residuals", "coefficients"}
     target = parse_into_expr(target).cast(pl.Float32)
     features = [f.cast(pl.Float32) for f in features]
     if add_intercept:
@@ -30,23 +30,37 @@ def pl_least_squares(
         sqrt_w = sample_weights.cast(pl.Float32).sqrt()
         target *= sqrt_w
         features = [expr * sqrt_w for expr in features]
-    predictions = (
-        target.register_plugin(
+
+    if mode == "coefficients":
+        return target.register_plugin(
             lib=lib,
-            symbol="pl_least_squares",
+            symbol="pl_least_squares_coefficients",
             args=features,
             kwargs={
                 "ridge_alpha": ridge_alpha,
                 "ridge_solve_method": ridge_solve_method,
             },
             is_elementwise=False,
+            changes_length=True,
         )
-        / sqrt_w
-    )  # undo the sqrt(w) scaling implicit in predictions (:= scaled_features @ coef)
-    if mode == "predictions":
-        return predictions
     else:
-        return (target - predictions).alias("residuals")
+        predictions = (
+            target.register_plugin(
+                lib=lib,
+                symbol="pl_least_squares",
+                args=features,
+                kwargs={
+                    "ridge_alpha": ridge_alpha,
+                    "ridge_solve_method": ridge_solve_method,
+                },
+                is_elementwise=False,
+            )
+            / sqrt_w
+        )  # undo the sqrt(w) scaling implicit in predictions (:= scaled_features @ coef)
+        if mode == "predictions":
+            return predictions
+        else:
+            return (target - predictions).alias("residuals")
 
 
 def pl_least_squares_from_formula(formula: str, **kwargs) -> pl.Expr:
