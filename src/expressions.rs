@@ -1,10 +1,11 @@
 #![allow(clippy::unit_arg, clippy::unused_unit)]
 use ndarray::{Array, Array1, Array2, Axis};
-use polars::error::PolarsResult;
+use polars::error::{PolarsResult, polars_err};
 use polars::prelude::{NamedFromOwned, Series};
 use pyo3_polars::derive::polars_expr;
 use serde::Deserialize;
 use crate::least_squares::{solve_ols_qr, solve_ridge};
+
 
 /// Convert a slice of polars series into target & feature ndarray objects.
 pub fn convert_polars_to_ndarray(inputs: &[Series]) -> (Array1<f32>, Array2<f32>) {
