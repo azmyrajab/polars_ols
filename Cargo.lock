@@ -1656,6 +1656,7 @@ dependencies = [
  "ndarray",
  "ndarray-linalg",
  "ndarray-rand",
+ "openssl",
  "polars",
  "pyo3",
  "pyo3-polars",

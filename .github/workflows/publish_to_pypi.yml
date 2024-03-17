@@ -23,7 +23,6 @@ permissions:
 # Make sure CI fails on all warnings, including Clippy lints
 env:
   RUSTFLAGS: "-Dwarnings"
-  OPENSSL_DIR: "/usr"  # Set OpenSSL directory globally
 
 
 jobs:
@@ -58,12 +57,19 @@ jobs:
           echo 
           sudo apt-get update
           sudo apt-get install -y pkg-config libssl-dev libudev-dev libopenblas-dev
-      - name: Set PKG_CONFIG_PATH
+      - name: Install OpenSSL from source
         run: |
-          openssl_path=$(which openssl)
-          if [ -n "$openssl_path" ]; then
-              export PKG_CONFIG_PATH="$PKG_CONFIG_PATH:$(dirname $(dirname $openssl_path))/lib/pkgconfig"
-          fi
+          mkdir -p ~/openssl
+          cd ~/openssl
+          curl -LO https://www.openssl.org/source/openssl-1.1.1l.tar.gz
+          tar -xzvf openssl-1.1.1l.tar.gz
+          cd openssl-1.1.1l
+          ./config --prefix=/usr/local/openssl
+          make
+          sudo make install
+          echo 'export LD_LIBRARY_PATH=/usr/local/openssl/lib:$LD_LIBRARY_PATH' >> ~/.bashrc
+          source ~/.bashrc
+          openssl version
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
