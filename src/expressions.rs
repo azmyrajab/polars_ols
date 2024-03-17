@@ -1,5 +1,6 @@
 #![allow(clippy::unit_arg, clippy::unused_unit)]
 use ndarray::{Array, Array1, Array2, Axis};
+use polars::error::PolarsResult;
 use polars::prelude::{NamedFromOwned, Series};
 use pyo3_polars::derive::polars_expr;
 use serde::Deserialize;
