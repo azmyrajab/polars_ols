@@ -81,7 +81,7 @@ jobs:
           sccache: 'true'
           manylinux: auto
         env:
-          OPENSSL_DIR: /usr
+          OPENSSL_DIR: /usr/bin/openssl
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
