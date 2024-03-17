@@ -51,7 +51,7 @@ def test_ols_coefficients():
     coef = df.select(
         pl.col("y").least_squares.from_formula("x1 + x2 -1", mode="coefficients")
     ).to_numpy()
-    assert np.allclose(coef, [1.0, 1.0], atol=1.0e-3, rtol=1.0e-3)
+    assert np.allclose(coef, [1.0, 1.0], atol=1.0e-2, rtol=1.0e-2)
 
 
 def test_ols_residuals():

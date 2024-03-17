@@ -50,6 +50,10 @@ jobs:
         target: [x86_64, x86]
     steps:
       - uses: actions/checkout@v3
+      - name: Install OpenSSL & OpenBLAS development packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev libopenblas-dev
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
