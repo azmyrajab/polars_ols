@@ -67,8 +67,6 @@ jobs:
 
               # Set OpenSSL environment variables
               export OPENSSL_DIR="$(dirname $(dirname $openssl_path))"
-              export OPENSSL_LIB_DIR="$(dirname $openssl_path)"
-              export OPENSSL_INCLUDE_DIR="$(dirname $(dirname $openssl_path))/include"
 
               # Check if OpenSSL development headers are present
               if [ -d "$(dirname $(dirname $openssl_path))/include/openssl" ]; then
@@ -77,19 +75,9 @@ jobs:
                   echo "Warning: OpenSSL development headers not found."
               fi
 
-              # Check if libssl.pc and openssl.pc files are present
-              if [ -f "$(dirname $(dirname $openssl_path))/lib/pkgconfig/libssl.pc" ] && \
-                 [ -f "$(dirname $(dirname $openssl_path))/lib/pkgconfig/openssl.pc" ]; then
-                  echo "libssl.pc and openssl.pc files found."
-              else
-                  echo "Warning: libssl.pc or openssl.pc files not found in pkgconfig directory."
-              fi
-
               # Print environment variables for debugging
               echo "PKG_CONFIG_PATH: $PKG_CONFIG_PATH"
               echo "OPENSSL_DIR: $OPENSSL_DIR"
-              echo "OPENSSL_LIB_DIR: $OPENSSL_LIB_DIR"
-              echo "OPENSSL_INCLUDE_DIR: $OPENSSL_INCLUDE_DIR"
           else
               echo "Error: openssl command not found."
           fi
