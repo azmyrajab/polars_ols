@@ -61,21 +61,14 @@ jobs:
         run: |
           if ! [ -x "$(command -v openssl)" ]; then
             echo "OpenSSL is not installed."
-            exit 0
+            exit 1
           else
             echo "OpenSSL is already installed."
             openssl_path=$(which openssl)
             if [ -n "$openssl_path" ]; then
               export OPENSSL_DIR=$(dirname $(dirname $openssl_path))
+              echo $OPENSSL_DIR
             fi
-            exit 1
-          fi
-      - name: Set environment variables for OpenSSL
-        if: ${{ success() }}
-        run: |
-          openssl_path=$(which openssl)
-          if [ -n "$openssl_path" ]; then
-              export OPENSSL_DIR=$(dirname $(dirname $openssl_path))
           fi
       - uses: actions/setup-python@v4
         with:
