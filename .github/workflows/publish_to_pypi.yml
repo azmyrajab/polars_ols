@@ -1,5 +1,6 @@
 name: CI
 
+
 on:
   push:
     branches:
@@ -22,6 +23,8 @@ permissions:
 # Make sure CI fails on all warnings, including Clippy lints
 env:
   RUSTFLAGS: "-Dwarnings"
+  OPENSSL_DIR: "/usr"  # Set OpenSSL directory globally
+
 
 jobs:
   linux_tests:
@@ -55,31 +58,11 @@ jobs:
           echo 
           sudo apt-get update
           sudo apt-get install -y pkg-config libssl-dev libudev-dev libopenblas-dev
-      - name: Set PKG_CONFIG_PATH and OpenSSL environment variables
+      - name: Set PKG_CONFIG_PATH
         run: |
-          # Get the path of openssl binary
           openssl_path=$(which openssl)
-
-          # If openssl_path is not empty, set environment variables
           if [ -n "$openssl_path" ]; then
-              # Append openssl directory to PKG_CONFIG_PATH
               export PKG_CONFIG_PATH="$PKG_CONFIG_PATH:$(dirname $(dirname $openssl_path))/lib/pkgconfig"
-
-              # Set OpenSSL environment variables
-              export OPENSSL_DIR="$(dirname $(dirname $openssl_path))"
-
-              # Check if OpenSSL development headers are present
-              if [ -d "$(dirname $(dirname $openssl_path))/include/openssl" ]; then
-                  echo "OpenSSL development headers found."
-              else
-                  echo "Warning: OpenSSL development headers not found."
-              fi
-
-              # Print environment variables for debugging
-              echo "PKG_CONFIG_PATH: $PKG_CONFIG_PATH"
-              echo "OPENSSL_DIR: $OPENSSL_DIR"
-          else
-              echo "Error: openssl command not found."
           fi
       - uses: actions/setup-python@v4
         with:
