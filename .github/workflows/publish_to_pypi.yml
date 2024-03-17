@@ -65,6 +65,7 @@ jobs:
           else
             echo "OpenSSL is already installed."
             openssl_path=$(which openssl)
+            echo $openssl_path
             if [ -n "$openssl_path" ]; then
               export OPENSSL_DIR=$(dirname $(dirname $openssl_path))
               echo $OPENSSL_DIR
@@ -80,6 +81,8 @@ jobs:
           args: --release --out dist --find-interpreter
           sccache: 'true'
           manylinux: auto
+        env:
+          OPENSSL_DIR: /usr
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
