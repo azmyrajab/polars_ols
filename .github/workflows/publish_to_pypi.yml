@@ -65,9 +65,8 @@ jobs:
           else
             echo "OpenSSL is already installed."
             openssl_path=$(which openssl)
-            echo $openssl_path
             if [ -n "$openssl_path" ]; then
-              export OPENSSL_DIR=$(dirname $(dirname $openssl_path))
+              export OPENSSL_DIR=$openssl_path
               echo $OPENSSL_DIR
             fi
           fi
