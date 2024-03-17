@@ -62,11 +62,15 @@ jobs:
           python-version: '3.10'
       - name: Build wheels
         uses: PyO3/maturin-action@v1
+        env:
+          OPENSSL_DIR: /usr/bin/openssl
+          PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/usr/bin
         with:
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter
-          sccache: 'false'
+          sccache: 'true'
           manylinux: auto
+          before-script-linux: python -m ensurepip --upgrade
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
