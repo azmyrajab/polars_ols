@@ -70,7 +70,6 @@ jobs:
           args: --release --out dist --find-interpreter
           sccache: 'true'
           manylinux: auto
-          before-script-linux: python -m ensurepip --upgrade
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
