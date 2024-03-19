@@ -1,5 +1,5 @@
 mod expressions;
-mod least_squares;
+pub mod least_squares;
 
 use pyo3::types::PyModule;
 use pyo3::{pymodule, PyResult, Python};
@@ -7,7 +7,7 @@ use pyo3::{pymodule, PyResult, Python};
 #[cfg(test)]
 mod tests {
     use crate::expressions::convert_polars_to_ndarray;
-    use crate::least_squares::{solve_ridge, solve_ols_qr, solve_ols_lapack};
+    use crate::least_squares::{solve_ols_lapack, solve_ols_qr, solve_ridge};
     use ndarray::prelude::*;
     use ndarray_linalg::assert_close_l2;
     use ndarray_rand::rand_distr::Normal;

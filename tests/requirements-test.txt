@@ -4,3 +4,4 @@ polars
 numpy
 pytest
 statsmodels
+pyperf

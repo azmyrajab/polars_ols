@@ -3,6 +3,12 @@
 version = 3
 
 [[package]]
+name = "accelerate-src"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "415ed64958754dbe991900f3940677e6a7eefb4d7367afd70d642677b0c7d19d"
+
+[[package]]
 name = "adler"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -119,6 +125,15 @@ name = "bitflags"
 version = "2.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed570934406eb16438a4e976b1b4500774099c13b8cb96eec99f620f05090ddf"
+
+[[package]]
+name = "blas-src"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b95e83dc868db96e69795c0213143095f03de9dd3252f205d4ac716e4076a7e0"
+dependencies = [
+ "accelerate-src",
+]
 
 [[package]]
 name = "block-buffer"
@@ -1657,25 +1672,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "polars-ols"
-version = "0.1.0"
-dependencies = [
- "faer",
- "faer-ext",
- "jemallocator",
- "ndarray",
- "ndarray-linalg",
- "ndarray-rand",
- "openssl",
- "openssl-sys",
- "polars",
- "pyo3",
- "pyo3-polars",
- "rayon",
- "serde",
-]
-
-[[package]]
 name = "polars-ops"
 version = "0.38.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1841,6 +1837,27 @@ dependencies = [
  "smartstring",
  "sysinfo",
  "version_check",
+]
+
+[[package]]
+name = "polars_ols"
+version = "0.1.0"
+dependencies = [
+ "blas-src",
+ "faer",
+ "faer-ext",
+ "jemallocator",
+ "ndarray",
+ "ndarray-linalg",
+ "ndarray-rand",
+ "openblas-src",
+ "openssl",
+ "openssl-sys",
+ "polars",
+ "pyo3",
+ "pyo3-polars",
+ "rayon",
+ "serde",
 ]
 
 [[package]]

@@ -1,9 +1,7 @@
 use faer::prelude::SpSolverLstsq;
 use faer_ext::{IntoFaer, IntoNdarray};
-use ndarray::{Array, Array1, Array2, NewAxis, s};
+use ndarray::{s, Array, Array1, Array2, NewAxis};
 use ndarray_linalg::{LeastSquaresSvd, SolveC, SVD};
-
-
 
 /// Solves an ordinary least squares problem using ndarray and LAPACK SGELSD.
 /// Inputs: features (2d ndarray), targets (1d ndarray)
@@ -75,6 +73,3 @@ pub fn solve_ridge(
     };
     coefficients
 }
-
-
-

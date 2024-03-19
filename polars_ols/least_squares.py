@@ -1,24 +1,23 @@
+from pathlib import Path
+
 from typing import Literal, Optional
 
 import polars as pl
 from polars.type_aliases import IntoExpr
-from polars.utils.udfs import _get_shared_lib_location
-
+from polars.plugins import register_plugin_function
 from polars_ols.utils import parse_into_expr, build_expressions_from_patsy_formula
-
-lib = _get_shared_lib_location(__file__)
 
 __all__ = ["pl_least_squares", "pl_least_squares_from_formula"]
 
 
 def pl_least_squares(
-    target: IntoExpr,
-    *features: pl.Expr,
-    ridge_alpha: float = 0.0,
-    sample_weights: Optional[pl.Expr] = None,
-    ridge_solve_method: Literal["svd", "solve"] = "solve",
-    add_intercept: bool = False,
-    mode: Literal["predictions", "residuals", "coefficients"] = "predictions",
+        target: IntoExpr,
+        *features: pl.Expr,
+        ridge_alpha: float = 0.0,
+        sample_weights: Optional[pl.Expr] = None,
+        ridge_solve_method: Literal["svd", "solve"] = "solve",
+        add_intercept: bool = False,
+        mode: Literal["predictions", "residuals", "coefficients"] = "predictions",
 ) -> pl.Expr:
     assert mode in {"predictions", "residuals", "coefficients"}
     target = parse_into_expr(target).cast(pl.Float32)
@@ -32,10 +31,10 @@ def pl_least_squares(
         features = [expr * sqrt_w for expr in features]
 
     if mode == "coefficients":
-        return target.register_plugin(
-            lib=lib,
-            symbol="pl_least_squares_coefficients",
-            args=features,
+        return register_plugin_function(
+            plugin_path=Path(__file__).parent,
+            function_name="pl_least_squares_coefficients",
+            args=[target] + features,
             kwargs={
                 "ridge_alpha": ridge_alpha,
                 "ridge_solve_method": ridge_solve_method,
@@ -45,17 +44,17 @@ def pl_least_squares(
         )
     else:
         predictions = (
-            target.register_plugin(
-                lib=lib,
-                symbol="pl_least_squares",
-                args=features,
-                kwargs={
-                    "ridge_alpha": ridge_alpha,
-                    "ridge_solve_method": ridge_solve_method,
-                },
-                is_elementwise=False,
-            )
-            / sqrt_w
+                register_plugin_function(
+                    plugin_path=Path(__file__).parent,
+                    function_name="pl_least_squares",
+                    args=[target] + features,
+                    kwargs={
+                        "ridge_alpha": ridge_alpha,
+                        "ridge_solve_method": ridge_solve_method,
+                    },
+                    is_elementwise=False,
+                )
+                / sqrt_w
         )  # undo the sqrt(w) scaling implicit in predictions (:= scaled_features @ coef)
         if mode == "predictions":
             return predictions

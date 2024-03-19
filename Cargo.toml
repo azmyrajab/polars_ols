@@ -1,5 +1,5 @@
 [package]
-name = "polars-ols"
+name = "polars_ols"
 version = "0.1.0"
 edition = "2021"
 
@@ -15,8 +15,8 @@ pyo3-polars = { version = "*", features = ["derive"] }
 serde = { version = "*", features = ["derive"] }
 polars = { version = "*", features = ["performant", "lazy", "ndarray"]}
 ndarray = { version = "*", features=["rayon", "blas"] }
-#blas-src = { version = "*", features = ["openblas"] }
-#openblas-src = { version = "*", features = ["cblas"] }
+blas-src = { version = "*", features = ["accelerate"] }  # openblas
+openblas-src = { version = "*", features = ["static"] }
 ndarray-rand = {version = "*"}
 ndarray-linalg = {version = "*", features = ["openblas-static"]}
 faer = {version = "*"}
