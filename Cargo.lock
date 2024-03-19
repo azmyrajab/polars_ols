@@ -3,12 +3,6 @@
 version = 3
 
 [[package]]
-name = "accelerate-src"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "415ed64958754dbe991900f3940677e6a7eefb4d7367afd70d642677b0c7d19d"
-
-[[package]]
 name = "adler"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -132,7 +126,7 @@ version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b95e83dc868db96e69795c0213143095f03de9dd3252f205d4ac716e4076a7e0"
 dependencies = [
- "accelerate-src",
+ "openblas-src",
 ]
 
 [[package]]
@@ -1147,7 +1141,6 @@ dependencies = [
  "num-integer",
  "num-traits",
  "rawpointer",
- "rayon",
 ]
 
 [[package]]
@@ -1856,7 +1849,6 @@ dependencies = [
  "polars",
  "pyo3",
  "pyo3-polars",
- "rayon",
  "serde",
 ]
 

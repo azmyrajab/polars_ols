@@ -53,7 +53,7 @@ def benchmark_ridge_numpy(data: pl.DataFrame):
 
 
 def benchmark_wls_from_formula(data: pl.DataFrame):
-    (
+    return (
         data.lazy()
         .with_columns(pl.lit(1.0).alias("sample_weights"))
         .with_columns(
@@ -63,7 +63,7 @@ def benchmark_wls_from_formula(data: pl.DataFrame):
             )
             .alias("predictions")
         )
-    )
+    ).collect()
 
 
 def benchmark_wls_from_formula_statsmodels(data: pl.DataFrame):
@@ -75,7 +75,6 @@ def benchmark_wls_from_formula_statsmodels(data: pl.DataFrame):
         )
         .fit()
         .predict()
-        .to_numpy()
     )
     return data.lazy().with_columns(predictions=pl.lit(predictions)).collect()
 
