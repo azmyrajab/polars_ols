@@ -1,5 +1,5 @@
 #![allow(clippy::unit_arg, clippy::unused_unit)]
-use crate::least_squares::{solve_ols_qr, solve_ridge};
+use crate::least_squares::{solve_elastic_net, solve_ols_qr, solve_ridge};
 use ndarray::{Array, Array1, Array2, Axis};
 use polars::error::{polars_err, PolarsResult};
 use polars::prelude::{NamedFromOwned, Series};
@@ -39,8 +39,10 @@ pub fn convert_polars_to_ndarray(inputs: &[Series]) -> (Array1<f32>, Array2<f32>
 
 #[derive(Deserialize)]
 pub struct OLSKwargs {
-    ridge_alpha: f32,
-    ridge_solve_method: String,
+    alpha: Option<f32>,
+    l1_ratio: Option<f32>,
+    max_iter: Option<usize>,
+    tol: Option<f32>,
 }
 
 /// Computes linear predictions and returns a polars series.
@@ -53,20 +55,16 @@ fn _get_least_squares_coefficients(
     features: &Array2<f32>,
     kwargs: OLSKwargs,
 ) -> Array1<f32> {
-    assert!(
-        kwargs.ridge_alpha >= 0.,
-        "alpha must be strictly positive or zero"
-    );
-    if kwargs.ridge_alpha > 0. {
-        solve_ridge(
-            targets,
-            features,
-            kwargs.ridge_alpha,
-            Some(&kwargs.ridge_solve_method),
-        )
-    } else {
+    let alpha = kwargs.alpha.unwrap_or(0.0);
+    if alpha == 0. {
         solve_ols_qr(targets, features)
+    } else if alpha > 0. && kwargs.l1_ratio.unwrap_or(0.0) == 0. {
+        solve_ridge(targets, features, alpha)
+    } else {
+        solve_elastic_net(targets, features, alpha, kwargs.l1_ratio,
+                          kwargs.max_iter, kwargs.tol)
     }
+
 }
 
 #[polars_expr(output_type = Float32)]

@@ -7,7 +7,7 @@ use pyo3::{pymodule, PyResult, Python};
 #[cfg(test)]
 mod tests {
     use crate::expressions::convert_polars_to_ndarray;
-    use crate::least_squares::{solve_ols_lapack, solve_ols_qr, solve_ridge};
+    use crate::least_squares::{solve_ols_qr, solve_ridge, solve_elastic_net};
     use ndarray::prelude::*;
     use ndarray_linalg::assert_close_l2;
     use ndarray_rand::rand_distr::Normal;
@@ -33,15 +33,6 @@ mod tests {
     }
 
     #[test]
-    fn test_ols_lapack() {
-        let (y, x1, x2) = make_data();
-        let (targets, features) = convert_polars_to_ndarray(&[y.clone(), x1, x2]);
-        let coefficients = solve_ols_lapack(&targets, &features);
-        let expected = array![1., 1.];
-        assert_close_l2!(&coefficients, &expected, 0.001);
-    }
-
-    #[test]
     fn test_ols_qr() {
         let (y, x1, x2) = make_data();
         let (targets, features) = convert_polars_to_ndarray(&[y.clone(), x1, x2]);
@@ -54,10 +45,21 @@ mod tests {
     fn test_ridge() {
         let (y, x1, x2) = make_data();
         let (targets, features) = convert_polars_to_ndarray(&[y.clone(), x1, x2]);
-        let coefficients = solve_ridge(&targets, &features, 1_000.0, Some("svd"));
+        let coefficients = solve_ridge(&targets, &features, 1_000.0);
         let expected = array![0.999, 0.999];
         assert_close_l2!(&coefficients, &expected, 0.001);
     }
+
+    #[test]
+    fn test_elastic_net() {
+        let (y, x1, x2) = make_data();
+        let (targets, features) = convert_polars_to_ndarray(&[y.clone(), x1, x2]);
+        let coefficients = solve_elastic_net(&targets, &features, 0.1, Some(0.5), None, None);
+        let expected = array![0.999, 0.999];
+        assert_close_l2!(&coefficients, &expected, 0.001);
+    }
+
+
 }
 
 #[cfg(target_os = "linux")]

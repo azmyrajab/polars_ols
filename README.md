@@ -1,7 +1,7 @@
 # Polars OLS
 ## Least squares extension in Polars
 
-Support for a variety of linear models (OLS, WLS, Ridge, etc.) in [Polars](https://www.pola.rs/).
+Support for a variety of linear models (OLS, WLS, Ridge, Elastic Net, etc.) in [Polars](https://www.pola.rs/).
 
 ### Why? 
 
@@ -13,13 +13,40 @@ Support for a variety of linear models (OLS, WLS, Ridge, etc.) in [Polars](https
 Installation
 ------------
 
-
 First, you need to [install Polars](https://pola-rs.github.io/polars/user-guide/installation/).
 
 Then, you'll need to install `polars-ols`:
 ```console
 pip install polars-ols
 ```
+
+API
+------------
+
+Importing `polars_ols` will register the namespace `least_squares` provided by this package:
+```python
+import polars as pl
+import polars_ols as pls
+
+ols_expr = pl.col("y").least_squares.from_formula("x1 + x2 + x3").over("group").alias("predictions_ols")
+```
+
+Alternatively, you also access public methods provided by the package:
+```python
+import polars as pl
+import polars_ols as pls
+
+wls_expr = pls.pl_least_squares_from_formula("y ~ x1 + x2 + x3",
+                                             sample_weights=pl.col("weights")
+                                             ).over("group").alias("predictions_wls")
+```
+
+The methods provided by the `least_squares` namespace return normal polars expressions which your polars dataframe can use
+```python
+predictions = df.select(ols_expr, wls_expr)
+```
+
+
 
 Examples
 -------------

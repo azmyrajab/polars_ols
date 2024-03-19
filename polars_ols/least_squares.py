@@ -13,11 +13,10 @@ __all__ = ["pl_least_squares", "pl_least_squares_from_formula"]
 def pl_least_squares(
         target: IntoExpr,
         *features: pl.Expr,
-        ridge_alpha: float = 0.0,
         sample_weights: Optional[pl.Expr] = None,
-        ridge_solve_method: Literal["svd", "solve"] = "solve",
         add_intercept: bool = False,
         mode: Literal["predictions", "residuals", "coefficients"] = "predictions",
+        **kwargs,
 ) -> pl.Expr:
     assert mode in {"predictions", "residuals", "coefficients"}
     target = parse_into_expr(target).cast(pl.Float32)
@@ -30,15 +29,20 @@ def pl_least_squares(
         target *= sqrt_w
         features = [expr * sqrt_w for expr in features]
 
+    defaults = {
+        "alpha": 0.0,
+        "l1_ratio": None,
+        "max_iter": None,
+        "tol": None,
+    }
+    kwargs = {**defaults, **kwargs}
+
     if mode == "coefficients":
         return register_plugin_function(
             plugin_path=Path(__file__).parent,
             function_name="pl_least_squares_coefficients",
-            args=[target] + features,
-            kwargs={
-                "ridge_alpha": ridge_alpha,
-                "ridge_solve_method": ridge_solve_method,
-            },
+            args=[target, *features],
+            kwargs=kwargs,
             is_elementwise=False,
             changes_length=True,
         )
@@ -47,11 +51,8 @@ def pl_least_squares(
                 register_plugin_function(
                     plugin_path=Path(__file__).parent,
                     function_name="pl_least_squares",
-                    args=[target] + features,
-                    kwargs={
-                        "ridge_alpha": ridge_alpha,
-                        "ridge_solve_method": ridge_solve_method,
-                    },
+                    args=[target, *features],
+                    kwargs=kwargs,
                     is_elementwise=False,
                 )
                 / sqrt_w

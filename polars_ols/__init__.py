@@ -24,7 +24,13 @@ class LeastSquares:
         return self.least_squares(*features, sample_weights=sample_weights, **kwargs)
 
     def ridge(self, *features: pl.Expr, alpha: float, **kwargs) -> pl.Expr:
-        return self.least_squares(*features, ridge_alpha=alpha, **kwargs)
+        return self.least_squares(*features, alpha=alpha, l1_ratio=0.0, **kwargs)
+
+    def lasso(self, *features: pl.Expr, alpha: float, **kwargs) -> pl.Expr:
+        return self.least_squares(*features, alpha=alpha, l1_ratio=1.0, **kwargs)
+
+    def elastic_net(self, *features: pl.Expr, alpha: float, l1_ratio: float = 0.5, **kwargs):
+        return self.least_squares(*features, alpha=alpha, l1_ratio=l1_ratio, **kwargs)
 
     def from_formula(self, formula: str, **kwargs) -> pl.Expr:
         features, add_intercept = build_expressions_from_patsy_formula(

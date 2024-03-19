@@ -5,7 +5,7 @@ import polars as pl
 import numpy as np
 from polars_ols import pl_least_squares_from_formula, pl_least_squares
 import statsmodels.formula.api as smf
-
+from sklearn.linear_model import ElasticNet
 
 @contextmanager
 def timer(msg: str | None = None, precision: int = 3) -> float:
@@ -110,7 +110,7 @@ def test_ridge():
                 pl.col("y"),
                 pl.col("x1"),
                 pl.col("x2"),
-                ridge_alpha=alpha,
+                alpha=alpha,
                 ridge_solve_method="solve",
             ).alias("predictions")
             df = df.lazy().with_columns(expr).collect()
@@ -171,3 +171,21 @@ def test_least_squares_namespace():
 
     # ensure all of the above are equivalent
     assert np.allclose(df.corr(), 1.0)
+
+
+def test_elastic_net():
+    df = _make_data()
+    mdl = ElasticNet(fit_intercept=False, alpha=0.1, l1_ratio=0.5, max_iter=1_000, tol=0.0001)
+    mdl.fit(df.select(pl.all().exclude("y")), df.select("y"))
+
+    coef = df.lazy().select(
+        pl.col("y").least_squares.from_formula("x1 + x2 -1",
+                                               mode="coefficients",
+                                               l1_ratio=0.5,
+                                               alpha=0.1,
+                                               max_iter=1_000,
+                                               tol=0.0001,
+                                               ).alias("predictions")
+
+    ).collect().to_numpy().flatten()
+    assert np.allclose(mdl.coef_, coef, rtol=1.e-4, atol=1.e-4)

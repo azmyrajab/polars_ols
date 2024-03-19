@@ -2,6 +2,7 @@ import polars_ols as pls  # import package to register the .least_squares namesp
 import polars as pl
 import numpy as np
 import statsmodels.formula.api as smf
+from sklearn.linear_model import ElasticNet
 import pyperf
 
 
@@ -78,6 +79,19 @@ def benchmark_wls_from_formula_statsmodels(data: pl.DataFrame):
     )
     return data.lazy().with_columns(predictions=pl.lit(predictions)).collect()
 
+def benchmark_elastic_net(data: pl.DataFrame):
+    return data.lazy().with_columns(
+        pl.col("y").least_squares.elastic_net(*[pl.col(c) for c in data.columns if c != "y"],
+                                              alpha=0.1, l1_ratio=0.5, max_iter=1_000)
+    ).collect()
+
+
+def benchmark_elastic_net_sklearn(data: pl.DataFrame):
+    mdl = ElasticNet(fit_intercept=False, alpha=0.1, l1_ratio=0.5, max_iter=1_000)
+    y, x = data.select("y").to_numpy().flatten(), data.select(pl.all().exclude("y")).to_numpy()
+    mdl.fit(x, y)
+    return data.lazy().with_columns(predictions=pl.lit(mdl.predict(x))).collect()
+
 
 df = _make_data()
 runner = pyperf.Runner()
@@ -89,3 +103,5 @@ runner.bench_func("benchmark_wls_from_formula", benchmark_wls_from_formula, df)
 runner.bench_func(
     "benchmark_wls_from_formula_statsmodels", benchmark_wls_from_formula_statsmodels, df
 )
+runner.bench_func("benchmark_elastic_net", benchmark_elastic_net, df)
+runner.bench_func("benchmark_elastic_net_sklearn", benchmark_elastic_net_sklearn, df)
