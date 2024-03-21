@@ -79,6 +79,7 @@ def benchmark_wls_from_formula_statsmodels(data: pl.DataFrame):
     )
     return data.lazy().with_columns(predictions=pl.lit(predictions)).collect()
 
+
 def benchmark_elastic_net(data: pl.DataFrame):
     return data.lazy().with_columns(
         pl.col("y").least_squares.elastic_net(*[pl.col(c) for c in data.columns if c != "y"],

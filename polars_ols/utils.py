@@ -52,6 +52,20 @@ def parse_into_expr(
 def build_expressions_from_patsy_formula(
     formula: str, include_dependent_variable: bool = False
 ) -> Tuple[Sequence[pl.Expr], bool]:
+    """Builds polars LHS and/or RHS expressions given a patsy formula.
+
+    Only a subset of supported features are supported, in particular:
+    - simple target to feature formula w/ interaction variables and intercept are
+    fully supported (e.g. 'y ~ x1 + x2:x3 -1')
+    - external functions applied to columns are not yet supported (e.g. "log(x1)")
+    - categorical features can not be supported, you have to 'pivot' yourself (e.g. "C(group)")
+
+    Example:
+        >>> ex, intercept = build_expressions_from_patsy_formula("y ~ x1 + x2 + x3:x4", include_dependent_variable=True)
+        >>> assert str(pl.col("y")) == str(ex[0])
+        >>> assert str(pl.col("x1")) == str(ex[1])
+        >>> assert str((1 * pl.col("x3") * pl.col("x4")).alias("x3:x4")) == str(ex[-1])
+    """
     try:
         import patsy as pa
     except ImportError as e:

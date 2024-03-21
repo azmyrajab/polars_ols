@@ -3,7 +3,7 @@ import time
 from contextlib import contextmanager
 import polars as pl
 import numpy as np
-from polars_ols import pl_least_squares_from_formula, pl_least_squares
+from polars_ols import least_squares_from_formula, least_squares
 import statsmodels.formula.api as smf
 from sklearn.linear_model import ElasticNet
 
@@ -33,7 +33,7 @@ def test_ols():
     # compute OLS solution w/ polars (via QR in rust) [2.331s]
     with timer("OLS rust"):
         for _ in range(1_000):
-            expr = pl_least_squares(pl.col("y"), pl.col("x1"), pl.col("x2")).alias("predictions")
+            expr = least_squares(pl.col("y"), pl.col("x1"), pl.col("x2")).alias("predictions")
             df = df.lazy().with_columns(expr).collect()
 
     # compute OLS w/ lstsq numpy [4.583s]
@@ -66,7 +66,7 @@ def test_ols_residuals():
 
 def test_ols_intercept():
     df = _make_data()
-    expr = pl_least_squares(pl.col("y"), pl.col("x1"), pl.col("x2"), add_intercept=True).alias(
+    expr = least_squares(pl.col("y"), pl.col("x1"), pl.col("x2"), add_intercept=True).alias(
         "predictions"
     )
     y_hat = df.select(expr).to_numpy().flatten()
@@ -79,7 +79,7 @@ def test_least_squares_from_formula():
     weights /= weights.mean()
     df = _make_data().with_columns(sample_weights=pl.lit(weights)).cast(pl.Float32)
 
-    expr = pl_least_squares_from_formula(
+    expr = least_squares_from_formula(
         "y ~ x1 + x2",  # patsy includes intercept by default
         sample_weights=pl.col("sample_weights"),
     ).alias("predictions")
@@ -106,7 +106,7 @@ def test_ridge():
 
     with timer("ridge rust"):
         for _ in range(1_000):
-            expr = pl_least_squares(
+            expr = least_squares(
                 pl.col("y"),
                 pl.col("x1"),
                 pl.col("x2"),
@@ -136,13 +136,13 @@ def test_wls():
 
     df = df.with_columns(sample_weight=weights).cast(pl.Float32)
 
-    expr_wls = pl_least_squares(
+    expr_wls = least_squares(
         pl.col("y"),
         pl.col("x1"),
         pl.col("x2"),
         sample_weights=pl.col("sample_weight"),
     ).alias("predictions_wls")
-    expr_ols = pl_least_squares(
+    expr_ols = least_squares(
         pl.col("y"),
         pl.col("x1"),
         pl.col("x2"),
@@ -189,3 +189,64 @@ def test_elastic_net():
 
     ).collect().to_numpy().flatten()
     assert np.allclose(mdl.coef_, coef, rtol=1.e-4, atol=1.e-4)
+
+
+def test_elastic_net_non_negative():
+    df = _make_data()
+    mdl = ElasticNet(fit_intercept=False, alpha=0.1, l1_ratio=0.5, max_iter=1_000, tol=0.0001, positive=True)
+    mdl.fit(df.select(pl.col("x1"), -pl.col("x2")), df.select("y"))
+
+    coef = df.lazy().select(
+        pl.col("y").least_squares.elastic_net(pl.col("x1"), -pl.col("x2"),
+                                               mode="coefficients",
+                                               l1_ratio=0.5,
+                                               alpha=0.1,
+                                               max_iter=1_000,
+                                               tol=0.0001,
+                                               positive=True,
+                                               ).alias("predictions")
+
+    ).collect().to_numpy().flatten()
+    assert np.allclose(mdl.coef_, coef, rtol=1.e-4, atol=1.e-4)
+
+
+def test_recursive_least_squares():
+    df = _make_data()
+
+    # expanding OLS
+    coef_rls = df.lazy().select(
+        pl.col("y").least_squares.rls(pl.col("x1"), pl.col("x2"),
+                                      mode="coefficients",
+                                      half_life=None,  # equivalent to expanding window (no forgetting)
+                                      initial_state_covariance=1_000_000.,  # arbitrarily weak L2 (diffuse) prior
+                                      ).alias("predictions")
+    ).select(pl.col("predictions").list.to_array(2)).collect().to_numpy().T
+
+    # full sample OLS
+    coef_ols = df.lazy().select(
+        pl.col("y").least_squares.ols(pl.col("x1"), pl.col("x2"), mode="coefficients")
+    ).collect().to_numpy().flatten()
+
+    # the two models should be equivalent in full sample
+    assert np.allclose(coef_rls[-1], coef_ols, rtol=1.e-4, atol=1.e-4)
+
+
+def test_recursive_least_squares_prior():
+    df = _make_data()
+
+    # equivalent to expanding OLS w/ L2 prior towards [0.5, 0.5]
+    coef_rls_prior = df.lazy().select(
+        pl.col("y").least_squares.rls(pl.col("x1"), pl.col("x2"),
+                                      mode="coefficients",
+                                      half_life=None,  # equivalent to expanding window (no forgetting)
+                                      initial_state_covariance=1.e-6,  # arbitrarily strong L2 prior
+                                      initial_state_mean=[0.5, 0.5],  # custom prior
+                                      ).alias("predictions")
+    ).select(pl.col("predictions").list.to_array(2)).collect().to_numpy().T
+
+    # given few samples and strong prior strength, the coefficients are nearly identical to the prior
+    assert np.allclose(coef_rls_prior[0], [0.5, 0.5], rtol=1.e-5, atol=1.e-5)
+    assert np.allclose(coef_rls_prior[10], [0.5, 0.5], rtol=1.e-5, atol=1.e-5)
+
+    # as number of samples seen grows, the coefficients start to diverge from prior
+    assert not np.allclose(coef_rls_prior[-1], [0.5, 0.5], rtol=1.e-5, atol=1.e-5)

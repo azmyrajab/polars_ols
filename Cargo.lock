@@ -1843,6 +1843,7 @@ dependencies = [
  "ndarray",
  "ndarray-linalg",
  "ndarray-rand",
+ "num-traits",
  "openblas-src",
  "openssl",
  "openssl-sys",

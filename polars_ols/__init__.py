@@ -1,10 +1,10 @@
 import polars as pl
 from polars_ols.utils import build_expressions_from_patsy_formula
-from polars_ols.least_squares import pl_least_squares, pl_least_squares_from_formula
+from polars_ols.least_squares import least_squares, least_squares_from_formula, recursive_least_squares
 
 __all__ = [
-    "pl_least_squares",
-    "pl_least_squares_from_formula",
+    "least_squares",
+    "least_squares_from_formula",
     "LeastSquares",
 ]
 
@@ -15,7 +15,7 @@ class LeastSquares:
         self._expr = expr
 
     def least_squares(self, *features: pl.Expr, **kwargs) -> pl.Expr:
-        return pl_least_squares(self._expr, *features, **kwargs)
+        return least_squares(self._expr, *features, **kwargs)
 
     def ols(self, *features: pl.Expr, **kwargs) -> pl.Expr:
         return self.least_squares(*features, **kwargs)
@@ -31,6 +31,12 @@ class LeastSquares:
 
     def elastic_net(self, *features: pl.Expr, alpha: float, l1_ratio: float = 0.5, **kwargs):
         return self.least_squares(*features, alpha=alpha, l1_ratio=l1_ratio, **kwargs)
+
+    def rls(self, *features: pl.Expr, half_life: float | None, **kwargs):
+        return recursive_least_squares(self._expr, *features, half_life=half_life, **kwargs)
+
+    def expanding_ols(self, *features: pl.Expr, **kwargs):
+        return self.rls(*features, half_life=None, **kwargs)
 
     def from_formula(self, formula: str, **kwargs) -> pl.Expr:
         features, add_intercept = build_expressions_from_patsy_formula(
