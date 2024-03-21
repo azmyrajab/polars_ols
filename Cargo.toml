@@ -19,7 +19,7 @@ blas-src = { version = "*", features = ["openblas"] }
 openblas-src = { version = "*", features = ["static"] }
 ndarray-rand = {version = "*"}
 ndarray-linalg = {version = "*", features = ["openblas-static"]}
-faer = {version = "*", features = ["std", "rayon", "serde", "rand", "nightly"]}
+faer = {version = "*"}
 faer-ext = {version = "*", features = ["ndarray"]}
 num-traits = { version = "0.2.18" }
 [target.'cfg(target_os = "linux")'.dependencies]

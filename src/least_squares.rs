@@ -228,7 +228,7 @@ fn inv_diag(c: &Array2<f32>) -> Array2<f32> {
 /// ```text
 /// (A + U C V)^{-1} = A^{-1} + A^{-1} U (C^{-1} + V A^{-1} U)^{-1} V A^{-1}
 /// ```
-fn woodbury_update(
+pub fn woodbury_update(
     a_inv: &Array2<f32>,
     u: &Array2<f32>,
     c: &Array2<f32>,

@@ -7,7 +7,7 @@ use pyo3::{pymodule, PyResult, Python};
 #[cfg(test)]
 mod tests {
     use crate::expressions::convert_polars_to_ndarray;
-    use crate::least_squares::{solve_ols_qr, solve_ridge, solve_elastic_net, solve_recursive_least_squares, solve_rolling_ols};
+    use crate::least_squares::{solve_ols_qr, solve_ridge, solve_elastic_net, solve_recursive_least_squares, solve_rolling_ols, woodbury_update};
     use ndarray::prelude::*;
     use ndarray_linalg::assert_close_l2;
     use ndarray_rand::rand_distr::Normal;
@@ -84,6 +84,24 @@ mod tests {
         println!("{:?}", coefficients.slice(s![0, ..]));
         println!("{:?}", coefficients.slice(s![-1, ..]));
         assert_close_l2!(&coefficients.slice(s![-1, ..]), &expected, 0.0001);
+    }
+
+    #[test]
+    fn test_woodbury_update() {
+        // Test matrices
+        let a_inv = array![[0.5, 0.0], [0.0, 0.5]]; // A^{-1}
+        let u = array![[1.0, 2.0], [3.0, 4.0]]; // U
+        let c = array![[2.0, 0.0], [0.0, 2.0]]; // C
+        let v = array![[1.0, 0.0], [0.0, 1.0]]; // V
+
+        // Expected result
+        let expected_result = array![[0.625, 0.25], [-0.375, 0.25]]; // Expected result
+
+        // Compute the Woodbury update
+        let result = woodbury_update(&a_inv, &u, &c, &v, Some(true));
+
+        // Compare with expected result
+        assert_eq!(&result, &expected_result);
     }
 
 }
