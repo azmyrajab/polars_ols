@@ -67,16 +67,15 @@ jobs:
           echo "OpenSSL include directory is $OPENSSL_INCLUDE_DIR"
           export OPENSSL_INCLUDE_DIR
       - name: Build wheels
-        run: |
-          export OPENSSL_INCLUDE_DIR=$(dpkg-query -L libssl-dev | grep '/include/openssl$' | head -n 1)
-          export PKG_CONFIG_PATH="$OPENSSL_INCLUDE_DIR/pkgconfig:$PKG_CONFIG_PATH"
-      - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter
           sccache: 'true'
           manylinux: auto
+          before-script-linux: |
+            export OPENSSL_INCLUDE_DIR=$(dpkg-query -L libssl-dev | grep '/include/openssl$' | head -n 1)
+            export PKG_CONFIG_PATH="$OPENSSL_INCLUDE_DIR/pkgconfig:$PKG_CONFIG_PATH"
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
