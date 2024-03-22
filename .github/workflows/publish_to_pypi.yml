@@ -60,12 +60,6 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-
-      - name: Find and set OpenSSL directory
-        run: |
-          OPENSSL_INCLUDE_DIR=$(dpkg-query -L libssl-dev | grep '/include/openssl$' | head -n 1)
-          echo "OpenSSL include directory is $OPENSSL_INCLUDE_DIR"
-          export OPENSSL_INCLUDE_DIR
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -74,8 +68,16 @@ jobs:
           sccache: 'true'
           manylinux: auto
           before-script-linux: |
-            export OPENSSL_INCLUDE_DIR=$(dpkg-query -L libssl-dev | grep '/include/openssl$' | head -n 1)
-            export PKG_CONFIG_PATH="$OPENSSL_INCLUDE_DIR/pkgconfig:$PKG_CONFIG_PATH"
+            # Check if OpenSSL is installed and print its version
+            if command -v openssl >/dev/null 2>&1; then
+              echo "OpenSSL is installed"
+              openssl version
+            else
+              echo "OpenSSL is not installed"
+            fi
+            # Run commands to find SSL or perform other setup tasks
+            OPENSSL_DIR=$(openssl version -d | awk '{print $NF}' | sed 's/"//g')
+            export PKG_CONFIG_PATH="$OPENSSL_DIR/pkgconfig:$PKG_CONFIG_PATH"
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
