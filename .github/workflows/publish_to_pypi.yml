@@ -23,7 +23,8 @@ permissions:
 # Make sure CI fails on all warnings, including Clippy lints
 env:
   RUSTFLAGS: "-Dwarnings"
-
+  OPENSSL_DIR: ${{ steps.openssl_dir.outputs.openssl_dir }}
+  PKG_CONFIG_PATH: ${{ steps.openssl_dir.outputs.pkg_config_path }}
 
 jobs:
   linux_tests:
@@ -61,15 +62,11 @@ jobs:
         with:
           python-version: '3.10'
       - name: Find and set OpenSSL directory
+        id: openssl_dir
         run: |
           OPENSSL_DIR=$(openssl version -d | awk '{print $NF}' | sed 's/"//g')
-          echo "OpenSSL is installed in $OPENSSL_DIR"
-          echo "export OPENSSL_DIR=$OPENSSL_DIR" >> $GITHUB_ENV
-          echo "export PKG_CONFIG_PATH=$OPENSSL_DIR/pkgconfig:\$PKG_CONFIG_PATH" >> $GITHUB_ENV
-      - name: Set OpenSSL environment variables
-        run: |
-          export OPENSSL_DIR=$(openssl version -d | awk '{print $NF}' | sed 's/"//g')
-          export PKG_CONFIG_PATH="$OPENSSL_DIR/pkgconfig:$PKG_CONFIG_PATH"
+          echo "openssl_dir=$OPENSSL_DIR" >> $GITHUB_ENV
+          echo "pkg_config_path=$OPENSSL_DIR/pkgconfig:\$PKG_CONFIG_PATH" >> $GITHUB_ENV
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
