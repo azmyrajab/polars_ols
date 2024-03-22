@@ -28,3 +28,7 @@ jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
 [profile.dev.package.faer]
 opt-level = 3
+
+[dependencies.openssl-sys]
+version = "*"
+features = ["vendored"]
