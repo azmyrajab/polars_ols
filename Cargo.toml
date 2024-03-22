@@ -8,8 +8,6 @@ name = "polars_ols"
 crate-type= ["cdylib"]
 
 [dependencies]
-# openssl = {version = "*", features = ["vendored"]}
-# openssl-sys = {version = "*", features = ["vendored"]}
 pyo3 = { version = "*", features = ["extension-module", "abi3-py38"] }
 pyo3-polars = { version = "*", features = ["derive"] }
 serde = { version = "*", features = ["derive"] }
@@ -28,7 +26,3 @@ jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
 [profile.dev.package.faer]
 opt-level = 3
-
-[dependencies.openssl-sys]
-version = "*"
-features = ["vendored"]
