@@ -128,5 +128,4 @@ runner.bench_func(
 )
 runner.bench_func("benchmark_elastic_net", benchmark_elastic_net, df)
 runner.bench_func("benchmark_elastic_net_sklearn", benchmark_elastic_net_sklearn, df)
-runner.bench_func("benchmark_recursive_least_squares",
-                  benchmark_recursive_least_squares, df)
+runner.bench_func("benchmark_recursive_least_squares", benchmark_recursive_least_squares, df)

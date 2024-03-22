@@ -90,10 +90,10 @@ def least_squares(
         "positive": None,
     }
     supported_parameters = set(defaults)
-    assert set(ols_kwargs).issubset(
-        supported_parameters
-    ), (f"only the following parameters are supported {supported_parameters}, "
-        f"the following are not {set(ols_kwargs).difference(supported_parameters)} ")
+    assert set(ols_kwargs).issubset(supported_parameters), (
+        f"only the following parameters are supported {supported_parameters}, "
+        f"the following are not {set(ols_kwargs).difference(supported_parameters)} "
+    )
     kwargs = {**defaults, **ols_kwargs}
 
     # register either coefficient or prediction plugin functions
