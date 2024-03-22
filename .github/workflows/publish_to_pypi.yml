@@ -52,11 +52,6 @@ jobs:
         target: [x86_64, x86]
     steps:
       - uses: actions/checkout@v3
-      - name: Install OpenSSL & OpenBLAS development packages
-        run: |
-          echo
-          sudo apt-get update
-          sudo apt-get install -y pkg-config libssl-dev librust-openssl-dev libudev-dev libopenblas-dev build-essential
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
@@ -68,6 +63,9 @@ jobs:
           sccache: 'true'
           manylinux: auto
           before-script-linux: |
+            # install openssl & openblas development packages
+            sudo apt-get update
+            sudo apt-get install -y pkg-config libssl-dev librust-openssl-dev libudev-dev libopenblas-dev build-essential
             # Print OpenSSL version
             openssl version
             # Set OpenSSL environment variables
