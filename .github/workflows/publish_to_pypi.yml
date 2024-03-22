@@ -64,8 +64,8 @@ jobs:
           manylinux: auto
           before-script-linux: |
             # install openssl & openblas development packages
-            apt-get update
-            apt-get install -y pkg-config libssl-dev librust-openssl-dev libudev-dev libopenblas-dev build-essential
+            RUN apt-get update
+            RUN apt-get install -y pkg-config libssl-dev librust-openssl-dev libudev-dev libopenblas-dev build-essential
             # Print OpenSSL version
             openssl version
             # Set OpenSSL environment variables
