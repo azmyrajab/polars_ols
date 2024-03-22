@@ -99,3 +99,8 @@ exclude = '''
 
 [tool.isort]
 profile = "black"
+
+[tool.flake8]
+max-line-length = 130
+exclude = [".git", "__pycache__", "dist"]
+max-complexity = 10

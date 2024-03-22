@@ -61,7 +61,8 @@ def build_expressions_from_patsy_formula(
     - categorical features can not be supported, you have to 'pivot' yourself (e.g. "C(group)")
 
     Example:
-        >>> ex, intercept = build_expressions_from_patsy_formula("y ~ x1 + x2 + x3:x4", include_dependent_variable=True)
+        >>> ex, intercept = build_expressions_from_patsy_formula("y ~ x1 + x2 + x3:x4",
+        ... include_dependent_variable=True)
         >>> assert str(pl.col("y")) == str(ex[0])
         >>> assert str(pl.col("x1")) == str(ex[1])
         >>> assert str((1 * pl.col("x3") * pl.col("x4")).alias("x3:x4")) == str(ex[-1])

@@ -1,9 +1,10 @@
-import polars_ols as pls  # import package to register the .least_squares namespace
-import polars as pl
 import numpy as np
+import polars as pl
+import pyperf
 import statsmodels.formula.api as smf
 from sklearn.linear_model import ElasticNet
-import pyperf
+
+import polars_ols as pls  # import package to register the .least_squares namespace
 
 
 def _make_data() -> pl.DataFrame:
@@ -81,10 +82,18 @@ def benchmark_wls_from_formula_statsmodels(data: pl.DataFrame):
 
 
 def benchmark_elastic_net(data: pl.DataFrame):
-    return data.lazy().with_columns(
-        pl.col("y").least_squares.elastic_net(*[pl.col(c) for c in data.columns if c != "y"],
-                                              alpha=0.1, l1_ratio=0.5, max_iter=1_000)
-    ).collect()
+    return (
+        data.lazy()
+        .with_columns(
+            pl.col("y").least_squares.elastic_net(
+                *[pl.col(c) for c in data.columns if c != "y"],
+                alpha=0.1,
+                l1_ratio=0.5,
+                max_iter=1_000,
+            )
+        )
+        .collect()
+    )
 
 
 def benchmark_elastic_net_sklearn(data: pl.DataFrame):

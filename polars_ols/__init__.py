@@ -1,6 +1,11 @@
 import polars as pl
+
+from polars_ols.least_squares import (
+    least_squares,
+    least_squares_from_formula,
+    recursive_least_squares,
+)
 from polars_ols.utils import build_expressions_from_patsy_formula
-from polars_ols.least_squares import least_squares, least_squares_from_formula, recursive_least_squares
 
 __all__ = [
     "least_squares",
