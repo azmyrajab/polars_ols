@@ -5,10 +5,14 @@ Support for a variety of linear models (OLS, WLS, Ridge, Elastic Net, etc.) in [
 
 ### Why? 
 
-1. **Performance**: implementations are written in rust and make use of high performance rust linear-algebra crates & LAPACK routines.
+1. **High Performance**: implementations are written in rust and make use of high performance rust linear-algebra crates & LAPACK routines.
 2. **Polars Integration**: avoids unnecessary conversions from lazy to eager mode and to other formats or multiple libraries (e.g. numpy, sklearn) to do simple linear regressions. Chain least squares like any other expression in your workflow.
-3. **Easy Parallelism**: Computing OLS predictions, in parallel, across groups can not be easier: call `.over()` or `group_by` just like any other polars' expression and benefit from full Rust parallelism.
-4. **Formula API**: supports building models via patsy syntax: `y ~ x1 + x2 + x3:x4 -1` (like statsmodels) and automatically converts to equivalent polars expressions.
+3. **Efficient Implementation**: 
+   - Numerically stable algorithms are chosen where possible (e.g. QR, Cholesky)
+   - Flexible model specification allows arbitrary combination of sample weighting, L1/L2 regularization, & non-negativity constraints on parameters
+   - Efficient rank-1 update algorithms used for moving window regressions
+4. **Easy Parallelism**: Computing OLS predictions, in parallel, across groups can not be easier: call `.over()` or `group_by` just like any other polars' expression and benefit from full Rust parallelism.
+5. **Formula API**: supports building models via patsy syntax: `y ~ x1 + x2 + x3:x4 -1` (like statsmodels) which automatically converts to equivalent polars expressions.
 
 Installation
 ------------

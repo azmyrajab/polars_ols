@@ -7,7 +7,10 @@ use pyo3::{pymodule, PyResult, Python};
 #[cfg(test)]
 mod tests {
     use crate::expressions::convert_polars_to_ndarray;
-    use crate::least_squares::{solve_ols_qr, solve_ridge, solve_elastic_net, solve_recursive_least_squares, solve_rolling_ols, woodbury_update};
+    use crate::least_squares::{
+        solve_elastic_net, solve_ols_qr, solve_recursive_least_squares, solve_ridge,
+        solve_rolling_ols, woodbury_update,
+    };
     use ndarray::prelude::*;
     use ndarray_linalg::assert_close_l2;
     use ndarray_rand::rand_distr::Normal;
@@ -62,10 +65,9 @@ mod tests {
     #[test]
     fn test_recursive_least_squares() {
         let (y, x1, x2) = make_data();
-        let (targets, features) = convert_polars_to_ndarray(
-            &[y.clone(), x1, x2]);
-        let coefficients = solve_recursive_least_squares(
-            &targets, &features, Some(252.0), Some(0.01), None);
+        let (targets, features) = convert_polars_to_ndarray(&[y.clone(), x1, x2]);
+        let coefficients =
+            solve_recursive_least_squares(&targets, &features, Some(252.0), Some(0.01), None);
         let expected = array![1.0, 1.0];
         println!("{:?}", coefficients.slice(s![0, ..]));
         println!("{:?}", coefficients.slice(s![-1, ..]));
@@ -75,11 +77,9 @@ mod tests {
     #[test]
     fn test_rolling_least_squares() {
         let (y, x1, x2) = make_data();
-        let (targets, features) = convert_polars_to_ndarray
-            (&[y.clone(), x1, x2]);
-        let coefficients = solve_rolling_ols(&targets, &features,
-                                             1_000usize,
-                                             Some(100usize), Some(false));
+        let (targets, features) = convert_polars_to_ndarray(&[y.clone(), x1, x2]);
+        let coefficients =
+            solve_rolling_ols(&targets, &features, 1_000usize, Some(100usize), Some(false));
         let expected: Array1<f32> = array![1.0, 1.0];
         println!("{:?}", coefficients.slice(s![0, ..]));
         println!("{:?}", coefficients.slice(s![-1, ..]));
@@ -103,7 +103,6 @@ mod tests {
         // Compare with expected result
         assert_eq!(&result, &expected_result);
     }
-
 }
 
 #[cfg(target_os = "linux")]

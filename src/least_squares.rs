@@ -3,7 +3,6 @@ use faer_ext::{IntoFaer, IntoNdarray};
 use ndarray::{s, Array, Array1, Array2, ArrayView1, Axis, NewAxis};
 use ndarray_linalg::{Inverse, InverseC, Norm, SolveC};
 
-
 /// Solves an ordinary least squares problem using QR using faer
 /// Inputs: features (2d ndarray), targets (1d ndarray)
 /// Outputs: 1-d OLS coefficients
@@ -207,12 +206,11 @@ fn outer_product(u: &ArrayView1<f32>, v: &ArrayView1<f32>) -> Array2<f32> {
     outer_product
 }
 
-
 fn inv_diag(c: &Array2<f32>) -> Array2<f32> {
     let s = c.raw_dim();
     assert!(s[0] == s[1]);
     let mut res: Array2<f32> = Array2::zeros(s);
-    for i in 0 .. s[0] {
+    for i in 0..s[0] {
         res[(i, i)] = c[(i, i)].recip();
     }
     res
@@ -235,7 +233,6 @@ pub fn woodbury_update(
     v: &Array2<f32>,
     c_is_diag: Option<bool>,
 ) -> Array2<f32> {
-
     // Check if c_is_diag is Some(true)
     let inv_c = if let Some(true) = c_is_diag {
         inv_diag(&c)
@@ -251,20 +248,15 @@ pub fn woodbury_update(
 }
 
 /// Function to update inv(X^TX) by x_update array of rank r using Woodbury Identity.
-fn update_xtx_inv(
-    xtx_inv: &Array2<f32>,
-    x_update: &Array2<f32>,
-) -> Array2<f32> {
+fn update_xtx_inv(xtx_inv: &Array2<f32>, x_update: &Array2<f32>) -> Array2<f32> {
     // Reshape x_new and x_old for Woodbury update
-    let u = (&x_update.t()).to_owned();  // K x r
-    let v = u.t().to_owned();  // r x K
+    let u = (&x_update.t()).to_owned(); // K x r
+    let v = u.t().to_owned(); // r x K
     let c = Array2::eye(u.shape()[1]); // Identity matrix r x r
 
     // Apply Woodbury update
     woodbury_update(xtx_inv, &u, &c, &v, Some(true))
-
 }
-
 
 pub fn solve_rolling_ols(
     y: &Array1<f32>,
@@ -304,8 +296,7 @@ pub fn solve_rolling_ols(
                 let x_prev = x.row(i_start);
 
                 // create rank 2 update array
-                let mut x_update = ndarray::stack(Axis(0),
-                                                  &[x_prev, x_new]).unwrap(); // 2 x K
+                let mut x_update = ndarray::stack(Axis(0), &[x_prev, x_new]).unwrap(); // 2 x K
 
                 // multiply x_old row by -1.0 (subtract the previous contribution)
                 x_update.row_mut(0).mapv_inplace(|elem| -elem);
@@ -322,7 +313,8 @@ pub fn solve_rolling_ols(
             let coefficients_i = xtx_inv.dot(&xty);
             coefficients.slice_mut(s![i, ..]).assign(&coefficients_i);
         }
-        } else {  // propagate X.T X & X.T Y and solve normal equations at every time step
+    } else {
+        // propagate X.T X & X.T Y and solve normal equations at every time step
 
         // assign warm-up coefficients
         let coef_warmup = solve_normal_equations(&xtx, &xty);
