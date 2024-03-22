@@ -112,11 +112,7 @@ pub struct RLSKwargs {
 }
 
 fn convert_option_vec_to_array1(opt_vec: Option<Vec<f32>>) -> Option<Array1<f32>> {
-    if let Some(vec) = opt_vec {
-        Some(Array1::from(vec))
-    } else {
-        None
-    }
+    opt_vec.map(Array1::from)
 }
 
 #[polars_expr(output_type_func=list_float_dtype)]

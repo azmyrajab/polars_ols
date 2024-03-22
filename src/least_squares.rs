@@ -21,11 +21,11 @@ pub fn solve_ols_qr(y: &Array1<f32>, x: &Array2<f32>) -> Array1<f32> {
 /// Solves the normal equations: (X^T X) coefficients = X^T Y
 fn solve_normal_equations(xtx: &Array2<f32>, xty: &Array1<f32>) -> Array1<f32> {
     // attempt to solve via cholesky making use of X.T X being SPD
-    match xtx.solvec(&xty) {
+    match xtx.solvec(xty) {
         Ok(coefficients) => coefficients,
         Err(_) => {
             // else fallback to QR decomposition
-            solve_ols_qr(&xty, &xtx)
+            solve_ols_qr(xty, xtx)
         }
     }
 }
@@ -201,9 +201,7 @@ fn outer_product(u: &ArrayView1<f32>, v: &ArrayView1<f32>) -> Array2<f32> {
     let v_reshaped = v.insert_axis(Axis(0));
 
     // Compute the outer product using broadcasting and dot product
-    let outer_product = u_reshaped.dot(&v_reshaped);
-
-    outer_product
+    u_reshaped.dot(&v_reshaped)
 }
 
 fn inv_diag(c: &Array2<f32>) -> Array2<f32> {
@@ -235,7 +233,7 @@ pub fn woodbury_update(
 ) -> Array2<f32> {
     // Check if c_is_diag is Some(true)
     let inv_c = if let Some(true) = c_is_diag {
-        inv_diag(&c)
+        inv_diag(c)
     } else {
         c.inv().unwrap()
     };
@@ -250,7 +248,7 @@ pub fn woodbury_update(
 /// Function to update inv(X^TX) by x_update array of rank r using Woodbury Identity.
 fn update_xtx_inv(xtx_inv: &Array2<f32>, x_update: &Array2<f32>) -> Array2<f32> {
     // Reshape x_new and x_old for Woodbury update
-    let u = (&x_update.t()).to_owned(); // K x r
+    let u = x_update.t().to_owned(); // K x r
     let v = u.t().to_owned(); // r x K
     let c = Array2::eye(u.shape()[1]); // Identity matrix r x r
 
@@ -330,13 +328,13 @@ pub fn solve_rolling_ols(
             let x_new = x.row(i);
 
             // Add new contributions
-            xtx = xtx + &outer_product(&x_new, &x_new);
-            xty = xty + &x_new * y[i];
+            xtx += &outer_product(&x_new, &x_new);
+            xty = xty - &x_new * y[i];
 
             // Subtract the previous contribution
             if i > window_size {
                 let x_prev = x.row(i_start);
-                xtx = xtx - &outer_product(&x_prev, &x_prev);
+                xtx -= &outer_product(&x_prev, &x_prev);
                 xty = xty - &x_prev * y[i_start];
             }
 
