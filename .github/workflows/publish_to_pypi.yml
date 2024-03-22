@@ -70,14 +70,13 @@ jobs:
           before-script-linux: |
             # Print OpenSSL version
             openssl version
-            # Print OS version
-            echo "Operating system inside the Docker container:"
-            uname -a
             # Set OpenSSL environment variables
             if command -v openssl >/dev/null 2>&1; then
-            OPENSSL_LIB_DIR=$(openssl version -d | awk '{print $NF}' | sed 's/"//g')/engines-1.0
-            export OPENSSL_LIB_DIR
-            echo $OPENSSL_LIB_DIR
+              OPENSSL_DIR=$(openssl version -d | awk '{print $NF}' | sed 's/"//g')
+              OPENSSL_LIB_DIR=$(ldconfig -p | grep -o '/lib.*libssl\.so' | sed 's|/lib.*||' | head -n 1)
+              echo "OpenSSL directory: $OPENSSL_DIR"
+              echo "OpenSSL library directory: $OPENSSL_LIB_DIR"
+              export OPENSSL_DIR OPENSSL_LIB_DIR
             fi
       - name: Upload wheels
         uses: actions/upload-artifact@v3
