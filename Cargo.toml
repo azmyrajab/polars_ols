@@ -18,6 +18,7 @@ ndarray-linalg = {version = "*"}  #  features = ["openblas-static"]
 faer = {version = "*"}
 faer-ext = {version = "*", features = ["ndarray"]}
 num-traits = { version = "*" }
+hashbrown = {version = "*", features=["nightly"]}
 
 [target.'cfg(target_os = "macos")'.dependencies]
 ndarray = { version = "*", features = ["blas"] }
