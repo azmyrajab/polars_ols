@@ -68,16 +68,8 @@ jobs:
           sccache: 'true'
           manylinux: auto
           before-script-linux: |
-            # Check if OpenSSL is installed and print its version
-            if command -v openssl >/dev/null 2>&1; then
-              echo "OpenSSL is installed"
-              openssl version
-            else
-              echo "OpenSSL is not installed"
-            fi
-            # Run commands to find SSL or perform other setup tasks
-            OPENSSL_DIR=$(openssl version -d | awk '{print $NF}' | sed 's/"//g')
-            export PKG_CONFIG_PATH="$OPENSSL_DIR/pkgconfig:$PKG_CONFIG_PATH"
+            # Print OpenSSL version
+            openssl version
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
