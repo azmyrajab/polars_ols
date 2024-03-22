@@ -59,12 +59,16 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
+
       - name: Find and set OpenSSL directory
         run: |
           OPENSSL_DIR=$(openssl version -d | awk '{print $NF}' | sed 's/"//g')
+          OPENSSL_INCLUDE_DIR=$(dpkg-query -L libssl-dev | grep '/include$' | head -n 1)
           echo "OpenSSL is installed in $OPENSSL_DIR"
+          echo "OpenSSL include directory is $OPENSSL_INCLUDE_DIR"
+          export OPENSSL_INCLUDE_DIR
           export PKG_CONFIG_PATH="$OPENSSL_DIR/pkgconfig:$PKG_CONFIG_PATH"
-      - name: Build wheels Cargo
+      - name: Build wheels
         run: |
           export OPENSSL_DIR=$(openssl version -d | awk '{print $NF}' | sed 's/"//g')
           export PKG_CONFIG_PATH="$OPENSSL_DIR/pkgconfig:$PKG_CONFIG_PATH"
