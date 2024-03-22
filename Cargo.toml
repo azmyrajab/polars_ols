@@ -11,15 +11,19 @@ crate-type= ["cdylib"]
 pyo3 = { version = "*", features = ["extension-module", "abi3-py38"] }
 pyo3-polars = { version = "*", features = ["derive"] }
 serde = { version = "*", features = ["derive"] }
-polars = { version = "*", features = ["performant", "lazy", "ndarray"]}
-ndarray = { version = "*"}  #  features=["blas"]
-#blas-src = { version = "*", features = ["openblas"] }
-#openblas-src = { version = "*", features = ["static"] }
+polars = { version = "*", features = ["performant", "lazy", "ndarray", "nightly"]}
+ndarray = { version = "*", features = ["blas"]}
 ndarray-rand = {version = "*"}
 ndarray-linalg = {version = "*"}  #  features = ["openblas-static"]
 faer = {version = "*"}
 faer-ext = {version = "*", features = ["ndarray"]}
 num-traits = { version = "*" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+ndarray = { version = "*", features = ["blas"] }
+ndarray-linalg = { version = "*", features = ["openblas-static"] }
+blas-src = { version = "*", features = ["openblas"] }  # accelerate
+openblas-src = { version = "*", features = ["static"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }

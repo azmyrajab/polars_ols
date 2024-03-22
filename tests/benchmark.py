@@ -103,6 +103,19 @@ def benchmark_elastic_net_sklearn(data: pl.DataFrame):
     return data.lazy().with_columns(predictions=pl.lit(mdl.predict(x))).collect()
 
 
+def benchmark_recursive_least_squares(data: pl.DataFrame):
+    return (
+        data.lazy()
+        .with_columns(
+            pl.col("y").least_squares.rls(
+                *[pl.col(c) for c in data.columns if c != "y"],
+                half_life=252,
+            )
+        )
+        .collect()
+    )
+
+
 df = _make_data()
 runner = pyperf.Runner()
 runner.bench_func("benchmark_least_squares", benchmark_least_squares, df)
@@ -115,3 +128,5 @@ runner.bench_func(
 )
 runner.bench_func("benchmark_elastic_net", benchmark_elastic_net, df)
 runner.bench_func("benchmark_elastic_net_sklearn", benchmark_elastic_net_sklearn, df)
+runner.bench_func("benchmark_recursive_least_squares",
+                  benchmark_recursive_least_squares, df)
