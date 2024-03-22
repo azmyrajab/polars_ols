@@ -23,7 +23,6 @@ permissions:
 # Make sure CI fails on all warnings, including Clippy lints
 env:
   RUSTFLAGS: "-Dwarnings"
-  OPENSSL_INCLUDE_DIR: "/usr/include/openssl"
 
 jobs:
   linux_tests:
@@ -55,19 +54,12 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-      - name: Install build-essential and set GCC as the C Compiler
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config liblz4-dev zlib1g-dev
-          export CC=gcc
-          export CFLAGS="-I/usr/include/lz4 -I/usr/include/x86_64-linux-gnu"
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter
           sccache: 'true'
-          container: off
           manylinux: auto
       - name: Upload wheels
         uses: actions/upload-artifact@v3
