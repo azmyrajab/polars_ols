@@ -61,25 +61,8 @@ jobs:
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter
           sccache: 'true'
+          container: off
           manylinux: auto
-          before-script-linux: |
-            # Manually install OpenSSL development packages
-            wget https://www.openssl.org/source/openssl-1.1.1l.tar.gz
-            tar -xzvf openssl-1.1.1l.tar.gz
-            cd openssl-1.1.1l
-            ./config --prefix=/usr/local/ssl --openssldir=/usr/local/ssl shared
-            make
-            sudo make install
-            # Print OpenSSL version
-            openssl version
-            # Set OpenSSL environment variables
-            if command -v openssl >/dev/null 2>&1; then
-              OPENSSL_DIR=$(openssl version -d | awk '{print $NF}' | sed 's/"//g')
-              OPENSSL_LIB_DIR=$(ldconfig -p | grep -o '/lib.*libssl\.so' | sed 's|/lib.*||' | head -n 1)
-              echo "OpenSSL directory: $OPENSSL_DIR"
-              echo "OpenSSL library directory: $OPENSSL_LIB_DIR"
-              export OPENSSL_DIR OPENSSL_LIB_DIR
-            fi
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
