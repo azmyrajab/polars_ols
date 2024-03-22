@@ -58,7 +58,7 @@ jobs:
       - name: Install build-essential and set GCC as the C Compiler
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential
+          sudo apt-get install -y build-essential pkg-config liblz4-dev zlib1g-dev
           export CC=gcc
       - name: Build wheels
         uses: PyO3/maturin-action@v1
