@@ -60,7 +60,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config liblz4-dev zlib1g-dev
           export CC=gcc
-          export CFLAGS="-I/usr/include/lz4"
+          export CFLAGS="-I/usr/include/lz4 -I/usr/include/x86_64-linux-gnu"
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
