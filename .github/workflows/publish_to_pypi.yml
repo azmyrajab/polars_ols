@@ -23,6 +23,9 @@ permissions:
 # Make sure CI fails on all warnings, including Clippy lints
 env:
   RUSTFLAGS: "-Dwarnings"
+  OPENSSL_LIB_DIR: /usr/lib
+  OPENSSL_INCLUDE_DIR: /usr/include
+  OPENSSL_DIR: /usr
 
 jobs:
   linux_tests:
@@ -61,8 +64,6 @@ jobs:
           python-version: '3.10'
       - name: Build wheels
         uses: PyO3/maturin-action@v1
-        env:
-          OPENSSL_DIR: "usr/lib/ssl"
         with:
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter
