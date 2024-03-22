@@ -62,17 +62,13 @@ jobs:
 
       - name: Find and set OpenSSL directory
         run: |
-          OPENSSL_DIR=$(openssl version -d | awk '{print $NF}' | sed 's/"//g')
-          OPENSSL_INCLUDE_DIR=$(dpkg-query -L libssl-dev | grep '/include$' | head -n 1)
-          echo "OpenSSL is installed in $OPENSSL_DIR"
+          OPENSSL_INCLUDE_DIR=$(dpkg-query -L libssl-dev | grep '/include/openssl$' | head -n 1)
           echo "OpenSSL include directory is $OPENSSL_INCLUDE_DIR"
           export OPENSSL_INCLUDE_DIR
-          export PKG_CONFIG_PATH="$OPENSSL_DIR/pkgconfig:$PKG_CONFIG_PATH"
       - name: Build wheels
         run: |
-          export OPENSSL_DIR=$(openssl version -d | awk '{print $NF}' | sed 's/"//g')
-          export PKG_CONFIG_PATH="$OPENSSL_DIR/pkgconfig:$PKG_CONFIG_PATH"
-          cargo tree --depth 20
+          export OPENSSL_INCLUDE_DIR=$(dpkg-query -L libssl-dev | grep '/include/openssl$' | head -n 1)
+          export PKG_CONFIG_PATH="$OPENSSL_INCLUDE_DIR/pkgconfig:$PKG_CONFIG_PATH"
           cargo build --release
       - name: Build wheels
         uses: PyO3/maturin-action@v1
