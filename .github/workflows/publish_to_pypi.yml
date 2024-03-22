@@ -68,7 +68,7 @@ jobs:
         run: |
           export OPENSSL_DIR=$(openssl version -d | awk '{print $NF}' | sed 's/"//g')
           export PKG_CONFIG_PATH="$OPENSSL_DIR/pkgconfig:$PKG_CONFIG_PATH"
-          cargo tree -d 20
+          cargo tree --depth 20
           cargo build --release
       - name: Build wheels
         uses: PyO3/maturin-action@v1
