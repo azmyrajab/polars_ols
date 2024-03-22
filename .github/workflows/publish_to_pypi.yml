@@ -63,9 +63,13 @@ jobs:
           sccache: 'true'
           manylinux: auto
           before-script-linux: |
-            # install openssl & openblas development packages
-            RUN apt-get update
-            RUN apt-get install -y pkg-config libssl-dev librust-openssl-dev libudev-dev libopenblas-dev build-essential
+            # Manually install OpenSSL development packages
+            wget https://www.openssl.org/source/openssl-1.1.1l.tar.gz
+            tar -xzvf openssl-1.1.1l.tar.gz
+            cd openssl-1.1.1l
+            ./config --prefix=/usr/local/ssl --openssldir=/usr/local/ssl shared
+            make
+            sudo make install
             # Print OpenSSL version
             openssl version
             # Set OpenSSL environment variables
