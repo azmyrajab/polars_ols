@@ -65,6 +65,11 @@ jobs:
           OPENSSL_DIR=$(openssl version -d | awk '{print $NF}' | sed 's/"//g')
           echo "OpenSSL is installed in $OPENSSL_DIR"
           echo "export OPENSSL_DIR=$OPENSSL_DIR" >> $GITHUB_ENV
+          echo "export PKG_CONFIG_PATH=$OPENSSL_DIR/pkgconfig:\$PKG_CONFIG_PATH" >> $GITHUB_ENV
+      - name: Set OpenSSL environment variables
+        run: |
+          export OPENSSL_DIR=$(openssl version -d | awk '{print $NF}' | sed 's/"//g')
+          export PKG_CONFIG_PATH="$OPENSSL_DIR/pkgconfig:$PKG_CONFIG_PATH"
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
