@@ -11,14 +11,13 @@ crate-type= ["cdylib"]
 pyo3 = { version = "*", features = ["extension-module", "abi3-py38"] }
 pyo3-polars = { version = "*", features = ["derive"] }
 serde = { version = "*", features = ["derive"] }
-polars = { version = "*", features = ["performant", "lazy", "ndarray", "nightly"]}
+polars = { version = "*", features = ["performant", "lazy", "ndarray"]}
 ndarray = { version = "*", features = ["blas"]}
 ndarray-rand = {version = "*"}
 ndarray-linalg = {version = "*"}  #  features = ["openblas-static"]
 faer = {version = "*"}
 faer-ext = {version = "*", features = ["ndarray"]}
 num-traits = { version = "*" }
-hashbrown = {version = "*", features=["nightly"]}
 
 [target.'cfg(target_os = "macos")'.dependencies]
 ndarray = { version = "*", features = ["blas"] }
