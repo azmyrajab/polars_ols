@@ -115,10 +115,8 @@ def test_ridge():
                 pl.col("x1"),
                 pl.col("x2"),
                 alpha=alpha,
-                ridge_solve_method="solve",
             ).alias("predictions")
             df = df.lazy().with_columns(expr).collect()
-
     assert np.allclose(df["predictions"].to_numpy(), expected, rtol=1.0e-4, atol=1.0e-4)
 
 
