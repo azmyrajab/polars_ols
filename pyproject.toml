@@ -18,6 +18,9 @@ dependencies = [
 ]
 keywords = ["polars-extension", "linear-regression"]
 
+[tool.maturin]
+module-name = "polars_ols._polars_ols"
+
 [project.optional-dependencies]
 dev = [
   "numpy",

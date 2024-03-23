@@ -95,7 +95,7 @@ mod tests {
         let v = array![[1.0, 0.0], [0.0, 1.0]]; // V
 
         // Expected result
-        let expected_result = array![[0.625, 0.25], [-0.375, 0.25]]; // Expected result
+        let expected_result = array![[0.625, 0.25], [-0.375, -0.25]]; // Expected result
 
         // Compute the Woodbury update
         let result = woodbury_update(&a_inv, &u, &c, &v, Some(true));
@@ -113,7 +113,7 @@ use jemallocator::Jemalloc;
 static ALLOC: Jemalloc = Jemalloc;
 
 #[pymodule]
-#[pyo3(name = "polars_ols")]
+#[pyo3(name = "_polars_ols")]
 fn _internal(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())

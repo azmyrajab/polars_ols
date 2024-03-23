@@ -66,6 +66,14 @@ jobs:
         with:
           name: wheels
           path: dist
+      - name: Run pytest & benchmark
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+          pip install .
+          pip install -r tests/requirements-test.txt
+          pytest tests/test_ols.py
+          python tests/benchmark.py --quiet
 
   macos:
     runs-on: macos-latest
@@ -88,13 +96,14 @@ jobs:
         with:
           name: wheels
           path: dist
-      - name: Run pytest
+      - name: Run pytest & benchmark
         run: |
           python -m pip install --upgrade pip
           pip install pytest
           pip install .
           pip install -r tests/requirements-test.txt
           pytest tests/test_ols.py
+          python tests/benchmark.py --quiet
 
   sdist:
     runs-on: ubuntu-latest

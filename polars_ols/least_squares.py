@@ -7,7 +7,7 @@ from polars.type_aliases import IntoExpr
 
 from polars_ols.utils import build_expressions_from_patsy_formula, parse_into_expr
 
-__all__ = ["least_squares", "least_squares_from_formula"]
+__all__ = ["least_squares", "least_squares_from_formula", "recursive_least_squares"]
 
 
 def _pre_process_data(
