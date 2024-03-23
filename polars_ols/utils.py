@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from functools import reduce
+from functools import lru_cache, reduce
 from typing import TYPE_CHECKING, Sequence, Tuple
 
 import polars as pl
@@ -49,6 +49,7 @@ def parse_into_expr(
     return expr
 
 
+@lru_cache(maxsize=100)
 def build_expressions_from_patsy_formula(
     formula: str, include_dependent_variable: bool = False
 ) -> Tuple[Sequence[pl.Expr], bool]:

@@ -116,16 +116,20 @@ def benchmark_recursive_least_squares(data: pl.DataFrame):
     )
 
 
-df = _make_data()
-runner = pyperf.Runner()
-runner.bench_func("benchmark_least_squares", benchmark_least_squares, df)
-runner.bench_func("benchmark_least_squares_numpy", benchmark_least_squares_numpy, df)
-runner.bench_func("benchmark_ridge", benchmark_ridge, df)
-runner.bench_func("benchmark_ridge_numpy", benchmark_ridge_numpy, df)
-runner.bench_func("benchmark_wls_from_formula", benchmark_wls_from_formula, df)
-runner.bench_func(
-    "benchmark_wls_from_formula_statsmodels", benchmark_wls_from_formula_statsmodels, df
-)
-runner.bench_func("benchmark_elastic_net", benchmark_elastic_net, df)
-runner.bench_func("benchmark_elastic_net_sklearn", benchmark_elastic_net_sklearn, df)
-runner.bench_func("benchmark_recursive_least_squares", benchmark_recursive_least_squares, df)
+if __name__ == "__main__":
+    # example: python polars_ols/tests/benchmark.py --quiet
+    # we run the benchmarks in python (as opposed to rust) so that overhead of pyO3 is included
+    df = _make_data()
+    runner = pyperf.Runner()
+    runner.bench_func("benchmark_least_squares", benchmark_least_squares, df)
+    runner.bench_func("benchmark_ridge", benchmark_ridge, df)
+    runner.bench_func("benchmark_wls_from_formula", benchmark_wls_from_formula, df)
+    runner.bench_func("benchmark_elastic_net", benchmark_elastic_net, df)
+    runner.bench_func("benchmark_recursive_least_squares", benchmark_recursive_least_squares, df)
+
+    runner.bench_func("benchmark_least_squares_numpy", benchmark_least_squares_numpy, df)
+    runner.bench_func("benchmark_ridge_numpy", benchmark_ridge_numpy, df)
+    runner.bench_func(
+        "benchmark_wls_from_formula_statsmodels", benchmark_wls_from_formula_statsmodels, df
+    )
+    runner.bench_func("benchmark_elastic_net_sklearn", benchmark_elastic_net_sklearn, df)

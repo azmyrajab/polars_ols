@@ -12,17 +12,17 @@ pyo3 = { version = "*", features = ["extension-module", "abi3-py38"] }
 pyo3-polars = { version = "*", features = ["derive"] }
 serde = { version = "*", features = ["derive"] }
 polars = { version = "*", features = ["performant", "lazy", "ndarray"]}
-ndarray = { version = "*", features = ["blas"]}
+ndarray = { version = "*"}
 ndarray-rand = {version = "*"}
-ndarray-linalg = {version = "*"}  #  features = ["openblas-static"]
+ndarray-linalg = {version = "*"}
 faer = {version = "*"}
 faer-ext = {version = "*", features = ["ndarray"]}
 num-traits = { version = "*" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 ndarray = { version = "*", features = ["blas"] }
-ndarray-linalg = { version = "*", features = ["openblas-static"] }
-blas-src = { version = "*", features = ["openblas"] }  # accelerate
+ndarray-linalg = { version = "*", features = ["openblas"]}
+blas-src = { version = "*", features = ["openblas"] }
 openblas-src = { version = "*", features = ["static"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
