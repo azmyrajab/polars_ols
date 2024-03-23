@@ -25,10 +25,12 @@ ndarray-linalg = { version = "*", features = ["openblas"]}
 blas-src = { version = "*", features = ["openblas"] }
 openblas-src = { version = "*", features = ["static"] }
 
-[target.'cfg(target_os = "linux")'.dependencies]
-jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
+[target.'cfg(target_os = "linux", target_arch = "x86_64")'.dependencies]
 ndarray = { version = "*", features = ["blas"] }
 ndarray-linalg = { version = "*", features = ["intel-mkl"]}
+
+[target.'cfg(target_os = "linux")'.dependencies]
+jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
 [profile.dev.package.faer]
 opt-level = 3
