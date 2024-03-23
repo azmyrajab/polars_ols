@@ -20,3 +20,4 @@ pre-commit: venv
 
 test: venv
 	venv/bin/python -m pytest tests
+	venv/bin/python tests/benchmark.py --quiet --fast

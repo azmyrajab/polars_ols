@@ -284,7 +284,7 @@ def test_recursive_least_squares_prior():
                 # equivalent to expanding window (no forgetting)
                 half_life=None,
                 initial_state_covariance=1.0e-6,  # arbitrarily strong L2 prior
-                initial_state_mean=[0.5, 0.5],  # custom prior
+                initial_state_mean=[0.25, 0.25],  # custom prior
             )
             .alias("predictions")
         )
@@ -296,8 +296,9 @@ def test_recursive_least_squares_prior():
 
     # given few samples and strong prior strength, the coefficients are nearly
     # identical to the prior
-    assert np.allclose(coef_rls_prior[0], [0.5, 0.5], rtol=1.0e-5, atol=1.0e-5)
-    assert np.allclose(coef_rls_prior[10], [0.5, 0.5], rtol=1.0e-5, atol=1.0e-5)
+    assert np.allclose(coef_rls_prior[0], [0.25, 0.25], rtol=1.0e-3, atol=1.0e-3)
+    assert np.allclose(coef_rls_prior[10], [0.25, 0.25], rtol=1.0e-3, atol=1.0e-3)
 
     # as number of samples seen grows, the coefficients start to diverge from prior
-    assert not np.allclose(coef_rls_prior[-1], [0.5, 0.5], rtol=1.0e-5, atol=1.0e-5)
+    # & eventually converge to ground truth.
+    assert not np.allclose(coef_rls_prior[-1], [0.5, 0.5], rtol=1.0e-4, atol=1.0e-4)

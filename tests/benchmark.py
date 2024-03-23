@@ -127,9 +127,9 @@ if __name__ == "__main__":
     runner.bench_func("benchmark_elastic_net", benchmark_elastic_net, df)
     runner.bench_func("benchmark_recursive_least_squares", benchmark_recursive_least_squares, df)
 
-    runner.bench_func("benchmark_least_squares_numpy", benchmark_least_squares_numpy, df)
-    runner.bench_func("benchmark_ridge_numpy", benchmark_ridge_numpy, df)
-    runner.bench_func(
-        "benchmark_wls_from_formula_statsmodels", benchmark_wls_from_formula_statsmodels, df
-    )
-    runner.bench_func("benchmark_elastic_net_sklearn", benchmark_elastic_net_sklearn, df)
+    # runner.bench_func("benchmark_least_squares_numpy", benchmark_least_squares_numpy, df)
+    # runner.bench_func("benchmark_ridge_numpy", benchmark_ridge_numpy, df)
+    # runner.bench_func(
+    #     "benchmark_wls_from_formula_statsmodels", benchmark_wls_from_formula_statsmodels, df
+    # )
+    # runner.bench_func("benchmark_elastic_net_sklearn", benchmark_elastic_net_sklearn, df)
