@@ -17,4 +17,6 @@ pre-commit: venv
 	venv/bin/python -m ruff check . --fix --exit-non-zero-on-fix
 	venv/bin/python -m ruff format polars_ols tests
 	venv/bin/pre-commit run --all-files
+
+test: venv
 	venv/bin/python -m pytest tests
