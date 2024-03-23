@@ -1,11 +1,11 @@
 # Polars OLS
 ## Least squares extension in Polars
 
-Supports linear model estimation in [Polars](https://www.pola.rs/). 
+Supports linear model estimation in [Polars](https://www.pola.rs/).
 
-This package provides efficient rust implementations of common linear 
-regression variants (OLS, WLS, Ridge, Elastic Net, Recursive least squares, Non-negative least squares) and exposes 
-them as simple polars expressions which can easily be integrated into your workflow. 
+This package provides efficient rust implementations of common linear
+regression variants (OLS, WLS, Ridge, Elastic Net, Recursive least squares, Non-negative least squares) and exposes
+them as simple polars expressions which can easily be integrated into your workflow.
 
 ### Why?
 
@@ -49,7 +49,7 @@ import polars_ols as pls
 
 enet_expr = pls.least_squares_from_formula("y ~ x1 + x2",
                                           sample_weights=pl.col("weights"),  # specify column with sample weights (WLS)
-                                          alpha=0.0001,   # specify regularization parameter 
+                                          alpha=0.0001,   # specify regularization parameter
                                           l1_ratio=0.5,  # set 50% L1 penalty & 50% L2 penalty
                                           positive=True,  # enforce non-negativity on coefficients
                                           ).over("group").alias("predictions_enet")
@@ -90,9 +90,9 @@ shape: (10, 8)
 ```
 
 A `mode` parameter is used to set the type of the output returned by all methods (`"predictions", "residuals", "coefficients"`).
-Defaults to returning predictions. 
+Defaults to returning predictions.
 
-In case `"coefficients"` is passed the output's shape is the number of features specified, and otherwise 
+In case `"coefficients"` is passed the output's shape is the number of features specified, and otherwise
 the output will match the input's length. See below:
 
 ```python
@@ -114,8 +114,8 @@ shape: (3, 1)
 └──────────────┘
 ```
 
-The only exception is dynamic models (e.g. recursive or rolling window least squares) where the coefficients as of each 
-sample are recorded in a `list[f32]` dtype (the length of each list is number of features). 
+The only exception is dynamic models (e.g. recursive or rolling window least squares) where the coefficients as of each
+sample are recorded in a `list[f32]` dtype (the length of each list is number of features).
 
 ```python
 coefficients_rls = df.select(pl.col("y").least_squares.rls(
@@ -162,4 +162,3 @@ Currently, this extension package supports the following variants:
 
 Notice that an arbitrary combination of sample_weights, L1/L2 penalties, and non-negativity constraint can be used with
 both the ```least_squares.from_formula``` and ```least_squares.least_squares``` methods outside of `least_squares.rls`.
-
