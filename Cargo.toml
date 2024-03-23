@@ -27,6 +27,8 @@ openblas-src = { version = "*", features = ["static"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
+ndarray = { version = "*", features = ["blas"] }
+ndarray-linalg = { version = "*", features = ["openblas"]}
 
 [profile.dev.package.faer]
 opt-level = 3
