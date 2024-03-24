@@ -12,29 +12,22 @@ pyo3 = { version = "*", features = ["extension-module", "abi3-py310"] }
 pyo3-polars = { version = "*", features = ["derive"] }
 serde = { version = "*", features = ["derive"] }
 polars = { version = "*", features = ["performant", "lazy", "ndarray"]}
-ndarray = { version = "*", features = ["blas"]}
+ndarray = { version = "*", features = ["blas", "approx"]}
 ndarray-rand = {version = "*"}
-ndarray-linalg = {version = "*"}
 faer = {version = "*"}
 faer-ext = {version = "*", features = ["ndarray"]}
 num-traits = { version = "*" }
-
-[target.'cfg(all(target_os = "macos", target_arch="x86_64"))'.dependencies]
-ndarray = { version = "*", features = ["blas"] }
-ndarray-linalg = { version = "*", features = ["openblas"]}
-blas-src = { version = "*", features = ["openblas"] }
-openblas-src = { version = "*", features = ["static"] }
+approx = {version = "*" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
-[target.'cfg(all(target_os = "linux", target_arch = "x86_64"))'.dependencies]
-ndarray-linalg = { version = "*", features = ["intel-mkl"] }
-
 [target.'cfg(all(target_os = "linux", not(target_arch = "x86_64")))'.dependencies]
 ndarray = { version = "*", features = ["matrixmultiply-threading"]}
-ndarray-linalg = {version = "*", features = ["default"]}
-#ndarray-linalg = { version = "*", features = ["default"] }
 
-[profile.dev.package.faer]
-opt-level = 3
+[dev-dependencies]
+ndarray-linalg = {version = "*"}
+
+#ndarray-linalg = { version = "*", features = ["default"] }
+#[profile.dev.package.faer]
+#opt-level = 3
