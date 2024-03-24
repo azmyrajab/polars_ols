@@ -28,12 +28,11 @@ openblas-src = { version = "*", features = ["static"] }
 [target.'cfg(target_os = "linux")'.dependencies]
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
-[target.'cfg(all(unix, target_arch = "x86_64"))'.dependencies]
-# ndarray = { version = "*", features = ["blas"] }
+[target.'cfg(all(target_os = "linux", target_arch = "x86_64"))'.dependencies]
 ndarray-linalg = { version = "*", features = ["intel-mkl"] }
 
-[target.'cfg(all(unix, not(target_arch = "x86_64")))'.dependencies]
-ndarray-linalg = { version = "*", features = ["netlib"] }
+[target.'cfg(all(target_os = "linux", not(target_arch = "x86_64")))'.dependencies]
+ndarray-linalg = { version = "*", features = ["intel-mkl-static"] }
 
 [profile.dev.package.faer]
 opt-level = 3

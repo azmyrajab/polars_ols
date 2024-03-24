@@ -123,7 +123,7 @@ coefficients_rls = df.select(pl.col("y").least_squares.rls(
                 pl.col("x2"),
                 mode="coefficients",
                 half_life=None, # equivalent to expanding window (no forgetting)
-                initial_state_covariance=0.25,  # L2 prior
+                initial_state_covariance=0.25,  # inversely proportional to L2 prior
                 initial_state_mean=[0.0, 0.0],  # custom prior
             ).alias("coefficients_rls"))
 
@@ -161,4 +161,4 @@ Currently, this extension package supports the following variants:
 - Recursive Least Squares: ```least_squares.rls```
 
 Notice that an arbitrary combination of sample_weights, L1/L2 penalties, and non-negativity constraint can be used with
-both the ```least_squares.from_formula``` and ```least_squares.least_squares``` methods outside of `least_squares.rls`.
+both the ```least_squares.from_formula``` and ```least_squares.least_squares``` (except for `least_squares.rls`).
