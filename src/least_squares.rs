@@ -1,23 +1,27 @@
+use faer::linalg::solvers::SolverCore;
 use faer::prelude::{SpSolver, SpSolverLstsq};
 use faer::Side;
-use faer::linalg::solvers::SolverCore;
 use faer_ext::{IntoFaer, IntoNdarray};
 use ndarray::{s, Array, Array1, Array2, ArrayView1, Axis, NewAxis};
 // use ndarray_linalg::{Inverse, InverseC, Norm, SolveC};
-
 
 fn inv(array: &Array2<f32>, use_cholesky: bool) -> Array2<f32> {
     let m = array.view().into_faer();
     if use_cholesky {
         m.cholesky(Side::Lower)
             .expect("could not compute cholesky decomposition")
-            .inverse().as_ref().into_ndarray().to_owned()
+            .inverse()
+            .as_ref()
+            .into_ndarray()
+            .to_owned()
     } else {
-        m.partial_piv_lu().inverse().as_ref().into_ndarray().to_owned()
+        m.partial_piv_lu()
+            .inverse()
+            .as_ref()
+            .into_ndarray()
+            .to_owned()
     }
 }
-
-
 
 /// Solves an ordinary least squares problem using QR using faer
 /// Inputs: features (2d ndarray), targets (1d ndarray)
@@ -37,13 +41,16 @@ pub fn solve_ols_qr(y: &Array1<f32>, x: &Array2<f32>) -> Array1<f32> {
 /// Solves the normal equations: (X^T X) coefficients = X^T Y
 fn solve_normal_equations(xtx: &Array2<f32>, xty: &Array1<f32>) -> Array1<f32> {
     // attempt to solve via cholesky making use of X.T X being SPD
-    xtx.view().into_faer()
-            .cholesky(Side::Lower).unwrap()
-            .solve(&xty.slice(s![.., NewAxis]).into_faer()).as_ref()
-            .into_ndarray()
-            .slice(s![.., 0]).into_owned()
+    xtx.view()
+        .into_faer()
+        .cholesky(Side::Lower)
+        .unwrap()
+        .solve(&xty.slice(s![.., NewAxis]).into_faer())
+        .as_ref()
+        .into_ndarray()
+        .slice(s![.., 0])
+        .into_owned()
 }
-
 
 /// Solves a ridge regression problem of the form: ||y - x B|| + alpha * ||B||
 /// Inputs: features (2d ndarray), targets (1d ndarray), ridge alpha scalar
@@ -104,7 +111,13 @@ pub fn solve_elastic_net(
             // Naive update: subtract contribution of current feature from residuals
             residuals = &residuals - &xj * w[j];
         }
-        if (&w - &w_old).view().insert_axis(Axis(0)).into_faer().norm_l2() < tol {
+        if (&w - &w_old)
+            .view()
+            .insert_axis(Axis(0))
+            .into_faer()
+            .norm_l2()
+            < tol
+        {
             break;
         }
     }
@@ -309,8 +322,7 @@ pub fn solve_rolling_ols(
                 let x_prev = x.row(i_start);
 
                 // create rank 2 update array
-                let mut x_update = ndarray::stack(Axis(0),
-                                                  &[x_prev, x_new]).unwrap(); // 2 x K
+                let mut x_update = ndarray::stack(Axis(0), &[x_prev, x_new]).unwrap(); // 2 x K
 
                 // multiply x_old row by -1.0 (subtract the previous contribution)
                 x_update.row_mut(0).mapv_inplace(|elem| -elem);

@@ -8,8 +8,8 @@ import polars_ols as pls  # import package to register the .least_squares namesp
 
 
 def _make_data() -> pl.DataFrame:
-    x = np.random.normal(size=(10_000, 5)).astype("float32")
-    eps = np.random.normal(size=10_000, scale=0.1).astype("float32")
+    x = np.random.normal(size=(2_000, 5)).astype("float32")
+    eps = np.random.normal(size=2_000, scale=0.1).astype("float32")
     return pl.DataFrame(data=x, schema=[f"x{i + 1}" for i in range(5)]).with_columns(
         y=pl.lit(x.sum(1) + eps)
     )

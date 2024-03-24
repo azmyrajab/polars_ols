@@ -1,3 +1,9 @@
+# ruff: noqa: E402
+# flake8: noqa: E402
+import os
+
+os.environ["POLARS_SKIP_CPU_CHECK"] = "1"
+
 import polars as pl
 
 from polars_ols.least_squares import (

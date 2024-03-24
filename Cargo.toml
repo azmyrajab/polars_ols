@@ -21,13 +21,13 @@ approx = {version = "*" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
-
-[target.'cfg(all(target_os = "linux", not(target_arch = "x86_64")))'.dependencies]
 ndarray = { version = "*", features = ["matrixmultiply-threading"]}
+
+#[target.'cfg(all(target_os = "linux", not(target_arch = "x86_64")))'.dependencies]
+#ndarray = { version = "*", features = ["matrixmultiply-threading"]}
 
 [dev-dependencies]
 ndarray-linalg = {version = "*"}
 
-#ndarray-linalg = { version = "*", features = ["default"] }
-#[profile.dev.package.faer]
-#opt-level = 3
+[profile.dev.package.faer]
+opt-level = 3
