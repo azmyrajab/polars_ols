@@ -19,7 +19,7 @@ faer = {version = "*"}
 faer-ext = {version = "*", features = ["ndarray"]}
 num-traits = { version = "*" }
 
-[target.'cfg(target_os = "macos")'.dependencies]
+[target.'cfg(all(target_os = "macos", target_arch="x86_64"))'.dependencies]
 ndarray = { version = "*", features = ["blas"] }
 ndarray-linalg = { version = "*", features = ["openblas"]}
 blas-src = { version = "*", features = ["openblas"] }
@@ -32,7 +32,7 @@ jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 ndarray-linalg = { version = "*", features = ["intel-mkl"] }
 
 [target.'cfg(all(target_os = "linux", not(target_arch = "x86_64")))'.dependencies]
-ndarray-linalg = { version = "*", features = ["intel-mkl-static"] }
+ndarray-linalg = { version = "*", features = ["netlib-static"] }
 
 [profile.dev.package.faer]
 opt-level = 3
