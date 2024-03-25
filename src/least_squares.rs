@@ -284,6 +284,25 @@ fn update_xtx_inv(xtx_inv: &Array2<f32>, x_update: &Array2<f32>) -> Array2<f32> 
     woodbury_update(xtx_inv, &u, &c, &v, Some(true))
 }
 
+
+/// Solves rolling ordinary least squares (OLS) regression.
+///
+/// This function calculates the coefficients of the linear regression model
+/// using rolling windows. It takes a dependent variable `y`, an independent variable matrix `x`,
+/// the size of the rolling window, the minimum number of periods required to calculate
+/// coefficients, and an optional flag to specify whether to use Woodbury matrix identity
+/// for additional efficiency in case of large number of features.
+///
+/// # Arguments
+///
+/// * `y` - A reference to a 1-dimensional array representing the dependent variable.
+/// * `x` - A reference to a 2-dimensional array representing the independent variables.
+/// * `window_size` - The size of the rolling window.
+/// * `min_periods` - An optional parameter specifying the minimum number of periods
+///                   required to calculate coefficients. If not provided, it defaults to 1.
+/// * `use_woodbury` - An optional parameter specifying whether to use Woodbury matrix identity
+///                    which propagates inv(XTX) directly. If not provided, it defaults to `false`.
+///
 pub fn solve_rolling_ols(
     y: &Array1<f32>,
     x: &Array2<f32>,
@@ -341,7 +360,7 @@ pub fn solve_rolling_ols(
             coefficients.slice_mut(s![i, ..]).assign(&coefficients_i);
         }
     } else {
-        // propagate X.T X & X.T Y and solve normal equations at every time step
+        // update X.T X & X.T Y and solve normal equations at every time step
         // assign warm-up coefficients
         let coef_warmup = solve_normal_equations(&xtx, &xty);
         coefficients
