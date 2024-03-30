@@ -2,26 +2,27 @@ use faer::linalg::solvers::SolverCore;
 use faer::prelude::{SpSolver, SpSolverLstsq};
 use faer::Side;
 use faer_ext::{IntoFaer, IntoNdarray};
-use ndarray::{s, Array, Array1, Array2, ArrayView1, Axis, NewAxis};
+use ndarray::{s, Array, Array1, Array2, ArrayView1, Axis, NewAxis, array};
 // use ndarray_linalg::{Inverse, InverseC, Norm, SolveC};
 
-fn inv(array: &Array2<f32>, use_cholesky: bool) -> Array2<f32> {
+
+/// Invert square matrix input using either Cholesky or LU decomposition
+pub fn inv(array: &Array2<f32>, use_cholesky: bool) -> Array2<f32> {
     let m = array.view().into_faer();
     if use_cholesky {
-        m.cholesky(Side::Lower)
-            .expect("could not compute cholesky decomposition")
-            .inverse()
-            .as_ref()
-            .into_ndarray()
-            .to_owned()
-    } else {
-        m.partial_piv_lu()
-            .inverse()
-            .as_ref()
-            .into_ndarray()
-            .to_owned()
+        match m.cholesky(Side::Lower) {
+            Ok(cholesky) => {
+                return cholesky.inverse().as_ref().into_ndarray().to_owned();
+            }
+            Err(_) => {
+                println!("Cholesky decomposition failed, falling back to LU decomposition");
+            }
+        }
     }
+    // Fall back to LU decomposition
+    m.partial_piv_lu().inverse().as_ref().into_ndarray().to_owned()
 }
+
 
 /// Solves an ordinary least squares problem using QR using faer
 /// Inputs: features (2d ndarray), targets (1d ndarray)
@@ -39,18 +40,37 @@ pub fn solve_ols_qr(y: &Array1<f32>, x: &Array2<f32>) -> Array1<f32> {
 }
 
 /// Solves the normal equations: (X^T X) coefficients = X^T Y
-fn solve_normal_equations(xtx: &Array2<f32>, xty: &Array1<f32>) -> Array1<f32> {
-    // attempt to solve via cholesky making use of X.T X being SPD
-    xtx.view()
-        .into_faer()
-        .cholesky(Side::Lower)
-        .unwrap()
+/// Attempts to solve via cholesky
+fn solve_normal_equations(xtx: &Array2<f32>, xty: &Array1<f32>, use_cholesky: bool) -> Array1<f32> {
+    // Attempt to solve via Cholesky decomposition
+    let xtx_faer = xtx.view().into_faer();
+    if use_cholesky {
+        match xtx_faer.cholesky(Side::Lower) {
+            Ok(cholesky) => {
+                // Cholesky decomposition successful
+                return cholesky
+                    .solve(&xty.slice(s![.., NewAxis]).into_faer())
+                    .as_ref()
+                    .into_ndarray()
+                    .slice(s![.., 0])
+                    .into_owned()
+            }
+            Err(_) => {
+                // Cholesky decomposition failed, fallback to LU decomposition w/ partial pivoting
+                println!("Cholesky decomposition failed, falling back to LU decomposition");
+            }
+        }
+    }
+    // Fall back to LU decomposition
+    xtx_faer
+        .partial_piv_lu()
         .solve(&xty.slice(s![.., NewAxis]).into_faer())
         .as_ref()
         .into_ndarray()
         .slice(s![.., 0])
         .into_owned()
 }
+
 
 /// Solves a ridge regression problem of the form: ||y - x B|| + alpha * ||B||
 /// Inputs: features (2d ndarray), targets (1d ndarray), ridge alpha scalar
@@ -61,7 +81,7 @@ pub fn solve_ridge(y: &Array1<f32>, x: &Array2<f32>, alpha: f32) -> Array1<f32> 
     let x_t_y = x_t.dot(y);
     let eye = Array::eye(x_t_x.shape()[0]);
     let ridge_matrix = &x_t_x + &eye * alpha;
-    solve_normal_equations(&ridge_matrix, &x_t_y)
+    solve_normal_equations(&ridge_matrix, &x_t_y, true)
 }
 
 fn soft_threshold(x: &f32, alpha: f32, positive: bool) -> f32 {
@@ -73,7 +93,9 @@ fn soft_threshold(x: &f32, alpha: f32, positive: bool) -> f32 {
 }
 
 /// Solves an elastic net regression problem of the form: 1 / (2 * n_samples) * ||y - Xw||_2
-/// + alpha * l1_ratio * ||w||_1 + 0.5 * alpha * (1 - l1_ratio) * ||w||_2
+/// + alpha * l1_ratio * ||w||_1 + 0.5 * alpha * (1 - l1_ratio) * ||w||_2.
+/// Uses cyclic coordinate descent with efficient 'naive updates' and a
+/// general soft thresholding function.
 pub fn solve_elastic_net(
     y: &Array1<f32>,
     x: &Array2<f32>,
@@ -223,7 +245,7 @@ pub fn solve_recursive_least_squares(
     coefficients
 }
 
-fn outer_product(u: &ArrayView1<f32>, v: &ArrayView1<f32>) -> Array2<f32> {
+pub fn outer_product(u: &ArrayView1<f32>, v: &ArrayView1<f32>) -> Array2<f32> {
     // Reshape u and v to have a shape of (n, 1) and (1, m) respectively
     let u_reshaped = u.insert_axis(Axis(1));
     let v_reshaped = v.insert_axis(Axis(0));
@@ -250,7 +272,7 @@ fn inv_diag(c: &Array2<f32>) -> Array2<f32> {
 /// The Woodbury update formula is given by:
 ///
 /// ```text
-/// (A + U C V)^{-1} = A^{-1} + A^{-1} U (C^{-1} + V A^{-1} U)^{-1} V A^{-1}
+/// (A + U C V)^{-1} = A^{-1} - A^{-1} U (C^{-1} + V A^{-1} U)^{-1} V A^{-1}
 /// ```
 pub fn woodbury_update(
     a_inv: &Array2<f32>,
@@ -264,21 +286,25 @@ pub fn woodbury_update(
         inv_diag(c)
     } else {
         inv(c, false)
-    };
+    };  // r x r
     // compute V inv(A)
-    let v_inv_a = v.dot(a_inv);
-    let inv_a_u = a_inv.dot(u);
+    let v_inv_a = v.dot(a_inv);  // r x K
+    let inv_a_u = a_inv.dot(u);  // K x r
     // compute term (C^{-1} + V A^{-1} U)^{-1}
-    let intermediate = inv(&(inv_c + v.dot(&inv_a_u)), false);
-    a_inv - inv_a_u.dot(&intermediate).dot(&v_inv_a)
+    let intermediate = inv(&(inv_c + v.dot(&inv_a_u)),
+                           false);  // r x r
+    a_inv - inv_a_u.dot(&intermediate).dot(&v_inv_a)  // K x K
 }
 
 /// Function to update inv(X^TX) by x_update array of rank r using Woodbury Identity.
-fn update_xtx_inv(xtx_inv: &Array2<f32>, x_update: &Array2<f32>) -> Array2<f32> {
+pub fn update_xtx_inv(xtx_inv: &Array2<f32>, x_update: &Array2<f32>, c: Option<&Array2<f32>>) -> Array2<f32> {
     // Reshape x_new and x_old for Woodbury update
     let u = x_update.t().to_owned(); // K x r
     let v = u.t().to_owned(); // r x K
-    let c = Array2::eye(u.shape()[1]); // Identity matrix r x r
+
+    // let c = Array2::eye(u.shape()[1]); // Identity matrix r x r
+    let default = Array2::eye(u.shape()[1]);
+    let c = c.unwrap_or(&default);
 
     // Apply Woodbury update
     woodbury_update(xtx_inv, &u, &c, &v, Some(true))
@@ -309,30 +335,47 @@ pub fn solve_rolling_ols(
     window_size: usize,
     min_periods: Option<usize>,
     use_woodbury: Option<bool>,
+    alpha: Option<f32>,
 ) -> Array2<f32> {
     let n = x.shape()[0];
     let k = x.shape()[1]; // Number of independent variables
-    let min_periods = min_periods.unwrap_or(1);
-    let use_woodbury = use_woodbury.unwrap_or(false);
+    let min_periods = min_periods.unwrap_or(std::cmp::min(k, window_size));
+    // default to using woodbury if number of features is relatively large.
+    let use_woodbury = use_woodbury.unwrap_or(k > 60);
     let mut coefficients = Array2::zeros((n, k));
+    let alpha = alpha.unwrap_or(0.0);
+
+    // we allow the user to pass a min_periods < k, but this may result in
+    // unstable warm-up coefficients. TODO: It might make sense to log a warning
+    debug_assert!(min_periods >= k && min_periods < window_size,
+            "min_periods must be greater or equal to the number of regressors \
+             in the model and less than the window size");
 
     // Initialize X^T X, inv(X.T X), and X^T Y
-    let x_window = x.slice(s![..window_size, ..]);
-    let y_window = y.slice(s![..window_size]);
-    let mut xty = x_window.t().dot(&y_window);
-    let mut xtx = x_window.t().dot(&x_window);
+    let x_warmup = x.slice(s![..min_periods, ..]);
+    let y_warmup = y.slice(s![..min_periods]);
+    let mut xty = x_warmup.t().dot(&y_warmup);
+    let mut xtx = x_warmup.t().dot(&x_warmup);
+
+    // add ridge penalty
+    if alpha > 0. {
+        xtx = xtx + Array2::<f32>::eye(k) * alpha
+    }
 
     // Use woodbury to propagate inv(X.T X) & (X.T Y)
     if use_woodbury {
         // assign warm-up coefficients
-        let mut xtx_inv = inv(&xtx, true);
+        let mut xtx_inv = inv(&xtx, false);
         let coef_warmup = xtx_inv.t().dot(&xty);
         coefficients
-            .slice_mut(s![min_periods, ..])
+            .slice_mut(s![min_periods - 1, ..])
             .assign(&coef_warmup);
 
+        // make c [[-1, 0], [0, 1]]; which drops old and adds new
+        let c: Array2<f32> = array![[-1., 0.], [0., 1.]];
+
         // Slide the window and update coefficients
-        for i in min_periods + 1..n {
+        for i in min_periods..n {
             let i_start = i.saturating_sub(window_size);
 
             let x_new = x.row(i);
@@ -341,34 +384,34 @@ pub fn solve_rolling_ols(
                 let x_prev = x.row(i_start);
 
                 // create rank 2 update array
-                let mut x_update = ndarray::stack(Axis(0), &[x_prev, x_new]).unwrap(); // 2 x K
+                let mut x_update = ndarray::stack(Axis(0),
+                                                  &[x_prev, x_new]).unwrap(); // 2 x K
 
                 // multiply x_old row by -1.0 (subtract the previous contribution)
                 x_update.row_mut(0).mapv_inplace(|elem| -elem);
 
                 // update inv(XTX) and XTY
-                xtx_inv = update_xtx_inv(&xtx_inv, &x_update);
+                xtx_inv = update_xtx_inv(&xtx_inv, &x_update, Some(&c));
                 xty = xty + &x_new * y[i]  // add new contribution
                     - &x_prev * y[i_start] // subtract old contribution
                 ;
             } else {
                 let x_update = x_new.insert_axis(Axis(0)).into_owned(); // 1 x K
-                xtx_inv = update_xtx_inv(&xtx_inv, &x_update);
+                xtx_inv = update_xtx_inv(&xtx_inv, &x_update, None);
                 xty = xty + &x_new * y[i];
             }
-            let coefficients_i = xtx_inv.dot(&xty);
-            coefficients.slice_mut(s![i, ..]).assign(&coefficients_i);
+            coefficients.slice_mut(s![i, ..]).assign(&xtx_inv.dot(&xty));
         }
     } else {
         // update X.T X & X.T Y and solve normal equations at every time step
         // assign warm-up coefficients
-        let coef_warmup = solve_normal_equations(&xtx, &xty);
+        let coef_warmup = solve_normal_equations(&xtx, &xty, false);
         coefficients
-            .slice_mut(s![min_periods, ..])
+            .slice_mut(s![min_periods - 1, ..])
             .assign(&coef_warmup);
 
         // Slide the window and update coefficients
-        for i in min_periods + 1..n {
+        for i in min_periods..n {
             let i_start = i.saturating_sub(window_size);
 
             // update XTX w/ latest data point
@@ -386,7 +429,7 @@ pub fn solve_rolling_ols(
             }
 
             // update coefficients
-            let coefficients_i = solve_normal_equations(&xtx, &xty);
+            let coefficients_i = solve_normal_equations(&xtx, &xty, true);
             coefficients.slice_mut(s![i, ..]).assign(&coefficients_i);
         }
     }

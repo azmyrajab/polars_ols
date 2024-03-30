@@ -5,8 +5,9 @@ import numpy as np
 import polars as pl
 import statsmodels.formula.api as smf
 from sklearn.linear_model import ElasticNet
+from statsmodels.regression.rolling import RollingOLS
 
-from polars_ols import least_squares, least_squares_from_formula
+from polars_ols import OLSKwargs, compute_least_squares, least_squares_from_formula
 
 
 @contextmanager
@@ -35,7 +36,9 @@ def test_ols():
     # compute OLS solution w/ polars (via QR in rust) [2.331s]
     with timer("OLS rust"):
         for _ in range(1_000):
-            expr = least_squares(pl.col("y"), pl.col("x1"), pl.col("x2")).alias("predictions")
+            expr = compute_least_squares(pl.col("y"), pl.col("x1"), pl.col("x2")).alias(
+                "predictions"
+            )
             df = df.lazy().with_columns(expr).collect()
 
     # compute OLS w/ lstsq numpy [4.583s]
@@ -68,7 +71,7 @@ def test_ols_residuals():
 
 def test_ols_intercept():
     df = _make_data()
-    expr = least_squares(pl.col("y"), pl.col("x1"), pl.col("x2"), add_intercept=True).alias(
+    expr = compute_least_squares(pl.col("y"), pl.col("x1"), pl.col("x2"), add_intercept=True).alias(
         "predictions"
     )
     y_hat = df.select(expr).to_numpy().flatten()
@@ -108,11 +111,11 @@ def test_ridge():
 
     with timer("ridge rust"):
         for _ in range(1_000):
-            expr = least_squares(
+            expr = compute_least_squares(
                 pl.col("y"),
                 pl.col("x1"),
                 pl.col("x2"),
-                alpha=alpha,
+                ols_kwargs=OLSKwargs(alpha=alpha),
             ).alias("predictions")
             df = df.lazy().with_columns(expr).collect()
     assert np.allclose(df["predictions"].to_numpy(), expected, rtol=1.0e-4, atol=1.0e-4)
@@ -136,13 +139,13 @@ def test_wls():
 
     df = df.with_columns(sample_weight=weights).cast(pl.Float32)
 
-    expr_wls = least_squares(
+    expr_wls = compute_least_squares(
         pl.col("y"),
         pl.col("x1"),
         pl.col("x2"),
         sample_weights=pl.col("sample_weight"),
     ).alias("predictions_wls")
-    expr_ols = least_squares(
+    expr_ols = compute_least_squares(
         pl.col("y"),
         pl.col("x1"),
         pl.col("x2"),
@@ -190,7 +193,7 @@ def test_elastic_net():
                 max_iter=1_000,
                 tol=0.0001,
             )
-            .alias("predictions")
+            .alias("coefficients")
         )
         .collect()
         .to_numpy()
@@ -220,7 +223,7 @@ def test_elastic_net_non_negative():
                 tol=0.0001,
                 positive=True,
             )
-            .alias("predictions")
+            .alias("coefficients")
         )
         .collect()
         .to_numpy()
@@ -246,9 +249,9 @@ def test_recursive_least_squares():
                 # arbitrarily weak L2 (diffuse) prior
                 initial_state_covariance=1_000_000.0,
             )
-            .alias("predictions")
+            .alias("coefficients")
         )
-        .select(pl.col("predictions").list.to_array(2))
+        .select(pl.col("coefficients").list.to_array(2))
         .collect()
         .to_numpy()
         .T
@@ -284,9 +287,9 @@ def test_recursive_least_squares_prior():
                 initial_state_covariance=1.0e-6,  # arbitrarily strong L2 prior
                 initial_state_mean=[0.25, 0.25],  # custom prior
             )
-            .alias("predictions")
+            .alias("coefficients")
         )
-        .select(pl.col("predictions").list.to_array(2))
+        .select(pl.col("coefficients").list.to_array(2))
         .collect()
         .to_numpy()
         .T
@@ -300,3 +303,32 @@ def test_recursive_least_squares_prior():
     # as number of samples seen grows, the coefficients start to diverge from prior
     # & eventually converge to ground truth.
     assert not np.allclose(coef_rls_prior[-1], [0.5, 0.5], rtol=1.0e-4, atol=1.0e-4)
+
+
+def test_rolling_least_squares():
+    df = _make_data()
+    with timer("rolling ols"):
+        coef_rolling = (
+            df.lazy()
+            .select(
+                pl.col("y")
+                .least_squares.rolling_ols(
+                    pl.col("x1"),
+                    pl.col("x2"),
+                    mode="coefficients",
+                    window_size=252,
+                    min_periods=2,
+                    use_woodbury=False,
+                )
+                .alias("coefficients")
+            )
+            .select(pl.col("coefficients").list.to_array(2))
+            .collect()
+            .to_numpy()
+            .T
+        )
+    with timer("rolling ols statsmodels"):
+        mdl = RollingOLS(
+            df["y"].to_numpy(), df[["x1", "x2"]].to_numpy(), window=252, min_nobs=2, expanding=True
+        ).fit()
+    assert np.allclose(coef_rolling[1:], mdl.params[1:].astype("float32"), rtol=1.0e-3, atol=1.0e-3)

@@ -1,6 +1,6 @@
 #![allow(clippy::unit_arg, clippy::unused_unit)]
 use crate::least_squares::{
-    solve_elastic_net, solve_ols_qr, solve_recursive_least_squares, solve_ridge,
+    solve_elastic_net, solve_ols_qr, solve_recursive_least_squares, solve_ridge, solve_rolling_ols,
 };
 use ndarray::{Array, Array1, Array2, Axis};
 use polars::datatypes::{DataType, Field, Float32Type};
@@ -115,6 +115,24 @@ fn convert_option_vec_to_array1(opt_vec: Option<Vec<f32>>) -> Option<Array1<f32>
     opt_vec.map(Array1::from)
 }
 
+fn coefficients_to_series(coefficients: &Array2<f32>) -> Series {
+    // convert 2d ndarray into Series of List[f32]
+    let mut chunked_builder =
+        ListPrimitiveChunkedBuilder::<Float32Type>::new(
+        "",
+        coefficients.len_of(Axis(0)),
+        coefficients.len_of(Axis(1)),
+        DataType::Float32,
+    );
+    for row in coefficients.axis_iter(Axis(0)) {
+        match row.as_slice() {
+            Some(row) => chunked_builder.append_slice(row),
+            None => chunked_builder.append_slice(&row.to_vec()),
+        }
+    }
+    chunked_builder.finish().into_series()
+}
+
 #[polars_expr(output_type_func=list_float_dtype)]
 fn recursive_least_squares_coefficients(
     inputs: &[Series],
@@ -130,21 +148,7 @@ fn recursive_least_squares_coefficients(
         initial_state_mean,
     );
 
-    // convert 2d ndarray into Series of List[f32]
-    let mut chunked_builder = ListPrimitiveChunkedBuilder::<Float32Type>::new(
-        "",
-        coefficients.len_of(Axis(0)),
-        coefficients.len_of(Axis(1)),
-        DataType::Float32,
-    );
-    for row in coefficients.axis_iter(Axis(0)) {
-        match row.as_slice() {
-            Some(row) => chunked_builder.append_slice(row),
-            None => chunked_builder.append_slice(&row.to_vec()),
-        }
-    }
-    let series = chunked_builder.finish().into_series();
-
+    let series = coefficients_to_series(&coefficients);
     Ok(series.with_name("coefficients"))
 }
 
@@ -157,6 +161,46 @@ fn recursive_least_squares(inputs: &[Series], kwargs: RLSKwargs) -> PolarsResult
         kwargs.half_life,
         kwargs.initial_state_covariance,
         None,
+    );
+    let predictions = (&x * &coefficients).sum_axis(Axis(1));
+    Ok(Series::from_vec(inputs[0].name(), predictions.to_vec()))
+}
+
+#[derive(Deserialize)]
+pub struct RollingKwargs {
+    window_size: usize,
+    min_periods: Option<usize>,
+    use_woodbury: Option<bool>,
+    alpha: Option<f32>,
+}
+
+#[polars_expr(output_type_func=list_float_dtype)]
+fn rolling_least_squares_coefficients(
+    inputs: &[Series],
+    kwargs: RollingKwargs,
+) -> PolarsResult<Series> {
+    let (y, x) = convert_polars_to_ndarray(inputs);
+    let coefficients = solve_rolling_ols(&y, &x,
+                                         kwargs.window_size,
+                                         kwargs.min_periods,
+                                         kwargs.use_woodbury,
+                                         kwargs.alpha,
+
+    );
+    let series = coefficients_to_series(&coefficients);
+    Ok(series.with_name("coefficients"))
+}
+
+#[polars_expr(output_type=Float32)]
+fn rolling_least_squares(inputs: &[Series], kwargs: RollingKwargs) -> PolarsResult<Series> {
+    let (y, x) = convert_polars_to_ndarray(inputs);
+    let coefficients = solve_rolling_ols(
+        &y,
+        &x,
+        kwargs.window_size,
+        kwargs.min_periods,
+        kwargs.use_woodbury,
+        kwargs.alpha,
     );
     let predictions = (&x * &coefficients).sum_axis(Axis(1));
     Ok(Series::from_vec(inputs[0].name(), predictions.to_vec()))

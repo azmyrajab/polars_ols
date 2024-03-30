@@ -7,10 +7,9 @@ use pyo3::{pymodule, PyResult, Python};
 #[cfg(test)]
 mod tests {
     use crate::expressions::convert_polars_to_ndarray;
-    use crate::least_squares::{
-        solve_elastic_net, solve_ols_qr, solve_recursive_least_squares, solve_ridge,
-        solve_rolling_ols, woodbury_update,
-    };
+    use crate::least_squares::{inv, outer_product, solve_elastic_net, solve_ols_qr,
+                               solve_recursive_least_squares, solve_ridge,
+                               solve_rolling_ols, update_xtx_inv, woodbury_update};
     use ndarray::prelude::*;
     use ndarray_linalg::assert_close_l2;
     use ndarray_rand::rand_distr::Normal;
@@ -80,7 +79,7 @@ mod tests {
         let (y, x1, x2) = make_data();
         let (targets, features) = convert_polars_to_ndarray(&[y.clone(), x1, x2]);
         let coefficients =
-            solve_rolling_ols(&targets, &features, 1_000usize, Some(100usize), Some(false));
+            solve_rolling_ols(&targets, &features, 1_000usize, Some(100usize), Some(true));
         let expected: Array1<f32> = array![1.0, 1.0];
         println!("{:?}", coefficients.slice(s![0, ..]));
         println!("{:?}", coefficients.slice(s![-1, ..]));
@@ -90,20 +89,55 @@ mod tests {
     #[test]
     fn test_woodbury_update() {
         // Test matrices
-        let a_inv = array![[0.5, 0.0], [0.0, 0.5]]; // A^{-1}
+        let a = array![[0.5, 0.2], [0.0, 0.5]]; // A^{-1}
+        let a_inv = inv(&a, false);
         let u = array![[1.0, 2.0], [3.0, 4.0]]; // U
-        let c = array![[2.0, 0.0], [0.0, 2.0]]; // C
+        let c = array![[1.0, 0.0], [0.0, 1.0]]; // C
         let v = array![[1.0, 0.0], [0.0, 1.0]]; // V
 
         // Expected result
-        let expected_result = array![[0.625, -0.25], [-0.375, 0.25]]; // Expected result
+        let expected_result = inv(&(&a + &u.dot(&c).dot(&v)), false);
 
         // Compute the Woodbury update
         let result = woodbury_update(&a_inv, &u, &c, &v, Some(true));
 
+        // test confirms: inv(A + UCV) == A{-1} - A^{-1} U (C^{-1} + V A^{-1} U)^{-1} V A^{-1}
+
         // Compare with expected result
         assert_close_l2!(&result, &expected_result, 0.00001);
     }
+
+    #[test]
+    fn test_update_xtx_inv() {
+        // Test matrices
+        let x = Array2::<f32>::random((252, 5),
+                               Normal::new(0., 1.).unwrap());
+
+        let xtx = x.t().dot(&x);
+        let mut xtx_inv = inv(&xtx, true);
+
+        let x_new = array![0.5, 2., -0.3, 0.1, 0.2];
+        let x_new = x_new.view(); // new data point
+        let x_old = x.slice(s![0, ..]); // old data point
+
+        // create rank 2 update array
+        let x_update = ndarray::stack(Axis(0),
+                                          &[x_old, x_new]).unwrap().clone(); // 2 x K
+
+        let c: Array2<f32> = array![[-1., 0.], [0., 1.]];  // subtract x_old, add x_new
+
+        // update xtx inv with [x_old, x_new] using woodbury
+        xtx_inv = update_xtx_inv(&xtx_inv, &x_update, Some(&c));
+
+        // test non fancy xtx update + invert
+        let expected = inv(
+            &(&xtx - &outer_product(&x_old, &x_old) + &outer_product(&x_new, &x_new)),
+            true
+        );
+        assert_close_l2!(&xtx_inv, &expected, 0.00001);
+
+    }
+
 }
 
 #[cfg(target_os = "linux")]

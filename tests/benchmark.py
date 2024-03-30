@@ -7,10 +7,10 @@ from sklearn.linear_model import ElasticNet
 import polars_ols as pls  # import package to register the .least_squares namespace
 
 
-def _make_data() -> pl.DataFrame:
-    x = np.random.normal(size=(2_000, 5)).astype("float32")
+def _make_data(n_features: int = 5) -> pl.DataFrame:
+    x = np.random.normal(size=(2_000, n_features)).astype("float32")
     eps = np.random.normal(size=2_000, scale=0.1).astype("float32")
-    return pl.DataFrame(data=x, schema=[f"x{i + 1}" for i in range(5)]).with_columns(
+    return pl.DataFrame(data=x, schema=[f"x{i + 1}" for i in range(n_features)]).with_columns(
         y=pl.lit(x.sum(1) + eps)
     )
 
@@ -116,8 +116,23 @@ def benchmark_recursive_least_squares(data: pl.DataFrame):
     )
 
 
+def benchmark_rolling_least_squares(data: pl.DataFrame):
+    return (
+        data.lazy()
+        .with_columns(
+            pl.col("y").least_squares.rolling_ols(
+                *[pl.col(c) for c in data.columns if c != "y"],
+                window_size=252,
+                min_periods=2,
+                alpha=0.0001,
+            )
+        )
+        .collect()
+    )
+
+
 if __name__ == "__main__":
-    # example: python polars_ols/tests/benchmark.py --quiet
+    # example: python tests/benchmark.py --quiet --fast
     # we run the benchmarks in python (as opposed to rust) so that overhead of pyO3 is included
     df = _make_data()
     runner = pyperf.Runner()
@@ -126,6 +141,7 @@ if __name__ == "__main__":
     runner.bench_func("benchmark_wls_from_formula", benchmark_wls_from_formula, df)
     runner.bench_func("benchmark_elastic_net", benchmark_elastic_net, df)
     runner.bench_func("benchmark_recursive_least_squares", benchmark_recursive_least_squares, df)
+    runner.bench_func("benchmark_rolling_least_squares", benchmark_rolling_least_squares, df)
 
     # runner.bench_func("benchmark_least_squares_numpy", benchmark_least_squares_numpy, df)
     # runner.bench_func("benchmark_ridge_numpy", benchmark_ridge_numpy, df)

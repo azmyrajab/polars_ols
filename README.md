@@ -33,12 +33,13 @@ API & Examples
 Importing `polars_ols` will register the namespace `least_squares` provided by this package.
 You can build models either by either specifying columns (`pl.col(...)`) for your targets and features or using
 the formula api (patsy syntax). See below for examples.
+
 ```python
 import polars as pl
 import polars_ols as pls
 
-ols_expr = pl.col("y").least_squares.from_formula("x1 + x2").over("group").alias("predictions_ols")
-lasso_expr = pl.col("y").least_squares.lasso(pl.col("x1"), pl.col("x2"), alpha=0.01).alias("predictions_lasso")
+ols_expr = pl.col("y").compute_least_squares.from_formula("x1 + x2").over("group").alias("predictions_ols")
+lasso_expr = pl.col("y").compute_least_squares.lasso(pl.col("x1"), pl.col("x2"), alpha=0.01).alias("predictions_lasso")
 ```
 
 Alternatively, you also access public methods provided by the package as well:
@@ -96,7 +97,7 @@ In case `"coefficients"` is passed the output's shape is the number of features 
 the output will match the input's length. See below:
 
 ```python
-coefficients = df.select(pl.col("y").least_squares.from_formula("x1 + x2", mode="coefficients")
+coefficients = df.select(pl.col("y").compute_least_squares.from_formula("x1 + x2", mode="coefficients")
                          .alias("coefficients").round(2))
 
 print(coefficients)
@@ -118,14 +119,14 @@ The only exception is dynamic models (e.g. recursive or rolling window least squ
 sample are recorded in a `list[f32]` dtype (the length of each list is number of features).
 
 ```python
-coefficients_rls = df.select(pl.col("y").least_squares.rls(
-                pl.col("x1"),
-                pl.col("x2"),
-                mode="coefficients",
-                half_life=None, # equivalent to expanding window (no forgetting)
-                initial_state_covariance=0.25,  # inversely proportional to L2 prior
-                initial_state_mean=[0.0, 0.0],  # custom prior
-            ).alias("coefficients_rls"))
+coefficients_rls = df.select(pl.col("y").compute_least_squares.rls(
+   pl.col("x1"),
+   pl.col("x2"),
+   mode="coefficients",
+   half_life=None,  # equivalent to expanding window (no forgetting)
+   initial_state_covariance=0.25,  # inversely proportional to L2 prior
+   initial_state_mean=[0.0, 0.0],  # custom prior
+).alias("coefficients_rls"))
 
 print(coefficients_rls)
 ```
