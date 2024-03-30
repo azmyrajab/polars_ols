@@ -10,8 +10,5 @@ __pycache__/
 
 .ipynb_checkpoints
 
-/notebooks
-
 .idea
-/notebooks/
 /venv/

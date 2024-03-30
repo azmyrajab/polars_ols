@@ -307,7 +307,7 @@ pub fn update_xtx_inv(xtx_inv: &Array2<f32>, x_update: &Array2<f32>, c: Option<&
     let c = c.unwrap_or(&default);
 
     // Apply Woodbury update
-    woodbury_update(xtx_inv, &u, &c, &v, Some(true))
+    woodbury_update(xtx_inv, &u, c, &v, Some(true))
 }
 
 

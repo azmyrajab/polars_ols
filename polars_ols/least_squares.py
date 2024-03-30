@@ -22,7 +22,17 @@ __all__ = [
 
 @dataclass
 class OLSKwargs:
-    """Specifies parameters relevant for regularized linear models: LASSO / Ridge / ElasticNet."""
+    """Specifies parameters relevant for regularized linear models: LASSO / Ridge / ElasticNet.
+
+    Attributes:
+        alpha: Regularization strength. Defaults to 0.0.
+        l1_ratio: Mixing parameter for ElasticNet regularization (0 for Ridge, 1 for LASSO).
+            Defaults to None (equivalent to Ridge regression).
+        max_iter: Maximum number of iterations. Defaults to 1000 iterations.
+        tol: Tolerance for convergence criterion. Defaults to 0.0001.
+        positive: Whether to enforce non-negativity constraints on coefficients.
+            Defaults to False (no constraint on coefficients).
+    """
 
     alpha: Optional[float] = 0.0
     l1_ratio: Optional[float] = None

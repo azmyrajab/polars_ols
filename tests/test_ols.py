@@ -318,7 +318,6 @@ def test_rolling_least_squares():
                     mode="coefficients",
                     window_size=252,
                     min_periods=2,
-                    use_woodbury=False,
                 )
                 .alias("coefficients")
             )
