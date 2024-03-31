@@ -117,8 +117,7 @@ fn convert_option_vec_to_array1(opt_vec: Option<Vec<f32>>) -> Option<Array1<f32>
 
 fn coefficients_to_series(coefficients: &Array2<f32>) -> Series {
     // convert 2d ndarray into Series of List[f32]
-    let mut chunked_builder =
-        ListPrimitiveChunkedBuilder::<Float32Type>::new(
+    let mut chunked_builder = ListPrimitiveChunkedBuilder::<Float32Type>::new(
         "",
         coefficients.len_of(Axis(0)),
         coefficients.len_of(Axis(1)),
@@ -180,12 +179,13 @@ fn rolling_least_squares_coefficients(
     kwargs: RollingKwargs,
 ) -> PolarsResult<Series> {
     let (y, x) = convert_polars_to_ndarray(inputs);
-    let coefficients = solve_rolling_ols(&y, &x,
-                                         kwargs.window_size,
-                                         kwargs.min_periods,
-                                         kwargs.use_woodbury,
-                                         kwargs.alpha,
-
+    let coefficients = solve_rolling_ols(
+        &y,
+        &x,
+        kwargs.window_size,
+        kwargs.min_periods,
+        kwargs.use_woodbury,
+        kwargs.alpha,
     );
     let series = coefficients_to_series(&coefficients);
     Ok(series.with_name("coefficients"))

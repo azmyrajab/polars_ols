@@ -2,9 +2,8 @@ use faer::linalg::solvers::SolverCore;
 use faer::prelude::{SpSolver, SpSolverLstsq};
 use faer::Side;
 use faer_ext::{IntoFaer, IntoNdarray};
-use ndarray::{s, Array, Array1, Array2, ArrayView1, Axis, NewAxis, array};
+use ndarray::{array, s, Array, Array1, Array2, ArrayView1, Axis, NewAxis};
 // use ndarray_linalg::{Inverse, InverseC, Norm, SolveC};
-
 
 /// Invert square matrix input using either Cholesky or LU decomposition
 pub fn inv(array: &Array2<f32>, use_cholesky: bool) -> Array2<f32> {
@@ -20,9 +19,12 @@ pub fn inv(array: &Array2<f32>, use_cholesky: bool) -> Array2<f32> {
         }
     }
     // Fall back to LU decomposition
-    m.partial_piv_lu().inverse().as_ref().into_ndarray().to_owned()
+    m.partial_piv_lu()
+        .inverse()
+        .as_ref()
+        .into_ndarray()
+        .to_owned()
 }
-
 
 /// Solves an ordinary least squares problem using QR using faer
 /// Inputs: features (2d ndarray), targets (1d ndarray)
@@ -53,7 +55,7 @@ fn solve_normal_equations(xtx: &Array2<f32>, xty: &Array1<f32>, use_cholesky: bo
                     .as_ref()
                     .into_ndarray()
                     .slice(s![.., 0])
-                    .into_owned()
+                    .into_owned();
             }
             Err(_) => {
                 // Cholesky decomposition failed, fallback to LU decomposition w/ partial pivoting
@@ -70,7 +72,6 @@ fn solve_normal_equations(xtx: &Array2<f32>, xty: &Array1<f32>, use_cholesky: bo
         .slice(s![.., 0])
         .into_owned()
 }
-
 
 /// Solves a ridge regression problem of the form: ||y - x B|| + alpha * ||B||
 /// Inputs: features (2d ndarray), targets (1d ndarray), ridge alpha scalar
@@ -163,7 +164,7 @@ impl RecursiveLeastSquares {
         // calculate forgetting_factor based on the value of half_life, default to 1.0
         // (expanding ols)
         let forgetting_factor = if let Some(half_life) = half_life {
-            0.5f32.ln() / half_life
+            (0.5f32.ln() / half_life).exp()
         } else {
             1.0
         };
@@ -186,7 +187,6 @@ impl RecursiveLeastSquares {
             .assign(&(&self.p.dot(x) / (r * self.forgetting_factor)));
         let residuals = y - x.dot(&self.coef);
         self.coef.assign(&(&self.coef + &(&self.k * residuals)));
-        // unfortunately can't find equivalent of 'np.outer' in ndarray
         let k_ = &self.k.view().insert_axis(Axis(1)); // K x 1
         self.p
             .assign(&(&self.p / self.forgetting_factor - k_.dot(&k_.t()) * r));
@@ -286,18 +286,21 @@ pub fn woodbury_update(
         inv_diag(c)
     } else {
         inv(c, false)
-    };  // r x r
-    // compute V inv(A)
-    let v_inv_a = v.dot(a_inv);  // r x K
-    let inv_a_u = a_inv.dot(u);  // K x r
-    // compute term (C^{-1} + V A^{-1} U)^{-1}
-    let intermediate = inv(&(inv_c + v.dot(&inv_a_u)),
-                           false);  // r x r
-    a_inv - inv_a_u.dot(&intermediate).dot(&v_inv_a)  // K x K
+    }; // r x r
+       // compute V inv(A)
+    let v_inv_a = v.dot(a_inv); // r x K
+    let inv_a_u = a_inv.dot(u); // K x r
+                                // compute term (C^{-1} + V A^{-1} U)^{-1}
+    let intermediate = inv(&(inv_c + v.dot(&inv_a_u)), false); // r x r
+    a_inv - inv_a_u.dot(&intermediate).dot(&v_inv_a) // K x K
 }
 
 /// Function to update inv(X^TX) by x_update array of rank r using Woodbury Identity.
-pub fn update_xtx_inv(xtx_inv: &Array2<f32>, x_update: &Array2<f32>, c: Option<&Array2<f32>>) -> Array2<f32> {
+pub fn update_xtx_inv(
+    xtx_inv: &Array2<f32>,
+    x_update: &Array2<f32>,
+    c: Option<&Array2<f32>>,
+) -> Array2<f32> {
     // Reshape x_new and x_old for Woodbury update
     let u = x_update.t().to_owned(); // K x r
     let v = u.t().to_owned(); // r x K
@@ -309,7 +312,6 @@ pub fn update_xtx_inv(xtx_inv: &Array2<f32>, x_update: &Array2<f32>, c: Option<&
     // Apply Woodbury update
     woodbury_update(xtx_inv, &u, c, &v, Some(true))
 }
-
 
 /// Solves rolling ordinary least squares (OLS) regression.
 ///
@@ -347,9 +349,11 @@ pub fn solve_rolling_ols(
 
     // we allow the user to pass a min_periods < k, but this may result in
     // unstable warm-up coefficients. TODO: It might make sense to log a warning
-    debug_assert!(min_periods >= k && min_periods < window_size,
-            "min_periods must be greater or equal to the number of regressors \
-             in the model and less than the window size");
+    debug_assert!(
+        min_periods >= k && min_periods < window_size,
+        "min_periods must be greater or equal to the number of regressors \
+             in the model and less than the window size"
+    );
 
     // Initialize X^T X, inv(X.T X), and X^T Y
     let x_warmup = x.slice(s![..min_periods, ..]);
@@ -384,8 +388,7 @@ pub fn solve_rolling_ols(
                 let x_prev = x.row(i_start);
 
                 // create rank 2 update array
-                let mut x_update = ndarray::stack(Axis(0),
-                                                  &[x_prev, x_new]).unwrap(); // 2 x K
+                let mut x_update = ndarray::stack(Axis(0), &[x_prev, x_new]).unwrap(); // 2 x K
 
                 // multiply x_old row by -1.0 (subtract the previous contribution)
                 x_update.row_mut(0).mapv_inplace(|elem| -elem);

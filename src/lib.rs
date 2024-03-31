@@ -7,9 +7,10 @@ use pyo3::{pymodule, PyResult, Python};
 #[cfg(test)]
 mod tests {
     use crate::expressions::convert_polars_to_ndarray;
-    use crate::least_squares::{inv, outer_product, solve_elastic_net, solve_ols_qr,
-                               solve_recursive_least_squares, solve_ridge,
-                               solve_rolling_ols, update_xtx_inv, woodbury_update};
+    use crate::least_squares::{
+        inv, outer_product, solve_elastic_net, solve_ols_qr, solve_recursive_least_squares,
+        solve_ridge, solve_rolling_ols, update_xtx_inv, woodbury_update,
+    };
     use ndarray::prelude::*;
     use ndarray_linalg::assert_close_l2;
     use ndarray_rand::rand_distr::Normal;
@@ -79,7 +80,8 @@ mod tests {
         let (y, x1, x2) = make_data();
         let (targets, features) = convert_polars_to_ndarray(&[y.clone(), x1, x2]);
         let coefficients =
-            solve_rolling_ols(&targets, &features, 1_000usize, Some(100usize), Some(true));
+            solve_rolling_ols(&targets, &features, 1_000usize, Some(100usize),
+                              Some(true), None);
         let expected: Array1<f32> = array![1.0, 1.0];
         println!("{:?}", coefficients.slice(s![0, ..]));
         println!("{:?}", coefficients.slice(s![-1, ..]));
@@ -110,8 +112,7 @@ mod tests {
     #[test]
     fn test_update_xtx_inv() {
         // Test matrices
-        let x = Array2::<f32>::random((252, 5),
-                               Normal::new(0., 1.).unwrap());
+        let x = Array2::<f32>::random((252, 5), Normal::new(0., 1.).unwrap());
 
         let xtx = x.t().dot(&x);
         let mut xtx_inv = inv(&xtx, true);
@@ -121,10 +122,9 @@ mod tests {
         let x_old = x.slice(s![0, ..]); // old data point
 
         // create rank 2 update array
-        let x_update = ndarray::stack(Axis(0),
-                                          &[x_old, x_new]).unwrap().clone(); // 2 x K
+        let x_update = ndarray::stack(Axis(0), &[x_old, x_new]).unwrap().clone(); // 2 x K
 
-        let c: Array2<f32> = array![[-1., 0.], [0., 1.]];  // subtract x_old, add x_new
+        let c: Array2<f32> = array![[-1., 0.], [0., 1.]]; // subtract x_old, add x_new
 
         // update xtx inv with [x_old, x_new] using woodbury
         xtx_inv = update_xtx_inv(&xtx_inv, &x_update, Some(&c));
@@ -132,12 +132,10 @@ mod tests {
         // test non fancy xtx update + invert
         let expected = inv(
             &(&xtx - &outer_product(&x_old, &x_old) + &outer_product(&x_new, &x_new)),
-            true
+            true,
         );
         assert_close_l2!(&xtx_inv, &expected, 0.00001);
-
     }
-
 }
 
 #[cfg(target_os = "linux")]
