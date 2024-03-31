@@ -148,4 +148,4 @@ This benchmark was run on randomly generated data with [pyperf](https://github.c
 
 Numpy's `lstsq` is already a highly optimized call into LAPACK and so the scope for speed-up is limited.
 However, we can achieve substantial speed-ups for the more complex models by working entirely in rust
-and avoiding overhead from back and forth into python. 
+and avoiding overhead from back and forth into python.
