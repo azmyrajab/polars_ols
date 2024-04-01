@@ -149,3 +149,19 @@ This benchmark was run on randomly generated data with [pyperf](https://github.c
 Numpy's `lstsq` is already a highly optimized call into LAPACK and so the scope for speed-up is limited.
 However, we can achieve substantial speed-ups for the more complex models by working entirely in rust
 and avoiding overhead from back and forth into python.
+
+Expect an additional relative order-of-magnitude speed up to your workflow if it involved repeated re-estimation of models in 
+(python) loops.
+
+
+Credits & Related Projects
+------------
+- Rust linear algebra libraries [faer](https://faer-rs.github.io/getting-started.html) and [ndarray](https://docs.rs/ndarray/latest/ndarray/) support the implementations provided by this extension package
+- This package was templated around the very helpful: [polars-plugin-tutorial](https://marcogorelli.github.io/polars-plugins-tutorial/)
+- The python package [patsy](https://patsy.readthedocs.io/en/latest/formulas.html) is used for (optionally) building models from formulae
+- Please check out the extension package [polars-ds](https://github.com/abstractqqq/polars_ds_extension) for general data-science functionality in polars
+
+Future Work / TODOs
+------------
+- Support generic types, in rust implementations, so that both <f32> and <f64> are recognized. Right now data is cast to f32 prior to estimation
+- Add more detailed documentation on supported models, signatures, and API
