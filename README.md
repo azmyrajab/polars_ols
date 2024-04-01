@@ -150,7 +150,7 @@ Numpy's `lstsq` is already a highly optimized call into LAPACK and so the scope 
 However, we can achieve substantial speed-ups for the more complex models by working entirely in rust
 and avoiding overhead from back and forth into python.
 
-Expect an additional relative order-of-magnitude speed up to your workflow if it involved repeated re-estimation of models in 
+Expect an additional relative order-of-magnitude speed up to your workflow if it involved repeated re-estimation of models in
 (python) loops.
 
 
@@ -163,5 +163,5 @@ Credits & Related Projects
 
 Future Work / TODOs
 ------------
-- Support generic types, in rust implementations, so that both <f32> and <f64> are recognized. Right now data is cast to f32 prior to estimation
+- Support generic types, in rust implementations, so that both f32 and f64 types are recognized. Right now data is cast to f32 prior to estimation
 - Add more detailed documentation on supported models, signatures, and API
