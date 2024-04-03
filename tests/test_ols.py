@@ -21,10 +21,11 @@ def timer(msg: str | None = None, precision: int = 3) -> float:
 
 
 def _make_data(n: int = 10_000):
-    array = np.random.normal(size=(n, 2))
+    rng = np.random.default_rng(0)
+    array = rng.normal(size=(n, 2))
     return pl.DataFrame(
         {
-            "y": array.sum(axis=1) + np.random.normal(size=n, scale=0.1),
+            "y": array.sum(axis=1) + rng.normal(size=n, scale=0.1),
             "x1": array[:, 0],
             "x2": array[:, 1],
         }
