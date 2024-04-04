@@ -79,25 +79,71 @@ shape: (5, 7)
 The `mode` parameter is used to set the type of the output returned by all methods (`"predictions", "residuals", "coefficients"`).
 It defaults to returning predictions matching the input's length.
 
-In case `"coefficients"` is set the output's shape is the number of features specified, see below:
+In case `"coefficients"` is set the output is a [polars Struct](https://docs.pola.rs/user-guide/expressions/structs/) with coefficients as values and feature names as fields.
+It's output shape 'broadcasts' depending on context, see below:
 
 ```python
 coefficients = df.select(pl.col("y").least_squares.from_formula("x1 + x2", mode="coefficients")
-                         .alias("coefficients").round(2))
+                         .alias("coefficients"))
+
+coefficients_group = df.select("group", pl.col("y").least_squares.from_formula("x1 + x2", mode="coefficients").over("group")
+                        .alias("coefficients_group")).unique(maintain_order=True)
+
 print(coefficients)
+print(coefficients_group)
 ```
 ```
-shape: (3, 1)
-┌──────────────┐
-│ coefficients │
-│ ---          │
-│ f32          │
-╞══════════════╡
-│ 0.98         │ <-- x1
-│ 0.99         │ <-- x2
-│ 0.0          │ <-- intercept added by formula api
-└──────────────┘
+shape: (1, 1)
+┌──────────────────────────────┐
+│ coefficients                 │
+│ ---                          │
+│ struct[3]                    │
+╞══════════════════════════════╡
+│ {0.977375,0.987413,0.000757} │  # <--- coef for x1, x2, and intercept added by formula API
+└──────────────────────────────┘
+shape: (2, 2)
+┌───────┬───────────────────────────────┐
+│ group ┆ coefficients_group            │
+│ ---   ┆ ---                           │
+│ i64   ┆ struct[3]                     │
+╞═══════╪═══════════════════════════════╡
+│ 1     ┆ {0.995157,0.977495,0.014344}  │
+│ 2     ┆ {0.939217,0.997441,-0.017599} │  # <--- (unique) coefficients per group
+└───────┴───────────────────────────────┘
 ```
+
+For dynamic models (like RecursiveLeastSquares) or if in a `.over`, `.group_by`, or `.with_columns` context, the
+coefficients take the shape of the data it is applied on. For example:
+
+```python
+coefficients = df.with_columns(pl.col("y").least_squares.rls(pl.col("x1"), pl.col("x2"), mode="coefficients")
+                         .over("group").alias("coefficients"))
+
+print(coefficients.head())
+```
+```
+shape: (5, 6)
+┌───────┬───────┬───────┬───────┬─────────┬─────────────────────┐
+│ y     ┆ x1    ┆ x2    ┆ group ┆ weights ┆ coefficients        │
+│ ---   ┆ ---   ┆ ---   ┆ ---   ┆ ---     ┆ ---                 │
+│ f64   ┆ f64   ┆ f64   ┆ i64   ┆ f64     ┆ struct[2]           │
+╞═══════╪═══════╪═══════╪═══════╪═════════╪═════════════════════╡
+│ 1.16  ┆ 0.72  ┆ 0.24  ┆ 1     ┆ 0.34    ┆ {1.235503,0.411834} │
+│ -2.16 ┆ -2.43 ┆ 0.18  ┆ 1     ┆ 0.97    ┆ {0.963515,0.760769} │
+│ -1.57 ┆ -0.63 ┆ -0.95 ┆ 1     ┆ 0.39    ┆ {0.975484,0.966029} │
+│ 0.21  ┆ 0.05  ┆ 0.23  ┆ 1     ┆ 0.8     ┆ {0.975657,0.953735} │
+│ 0.22  ┆ -0.07 ┆ 0.44  ┆ 1     ┆ 0.57    ┆ {0.97898,0.909793}  │
+└───────┴───────┴───────┴───────┴─────────┴─────────────────────┘
+```
+
+Finally, for convenience, in order to compute out-of-sample predictions you can use:
+```least_squares.predict```. This saves you the effort of un-nesting the coefficients and doing the dot product in
+python and instead does this in Rust, as an expression. Usage is as follows:
+
+```python
+df_test.select(pl.col("coefficients_train").least_squares.predict(pl.col("x1"), pl.col("x2")).alias("predictions_test"))
+```
+
 
 Supported Models
 ------------

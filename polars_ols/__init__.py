@@ -10,6 +10,7 @@ from polars_ols.least_squares import (
     compute_recursive_least_squares,
     compute_rolling_least_squares,
     least_squares_from_formula,
+    predict,
 )
 from polars_ols.utils import build_expressions_from_patsy_formula
 
@@ -106,3 +107,6 @@ class LeastSquares:
             return self.rolling_ols(*features, add_intercept=add_intercept, **kwargs)
         else:
             return self.least_squares(*features, add_intercept=add_intercept, **kwargs)
+
+    def predict(self, *features: pl.Expr, name: Optional[str] = None) -> pl.Expr:
+        return predict(self._expr, *features, name=name)

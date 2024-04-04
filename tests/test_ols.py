@@ -100,7 +100,7 @@ def test_coefficients_shape_broadcast():
         "group",
     )
     assert df_group.shape == (10_000, 2)
-    assert df_group.unique() == (10, 2)
+    assert df_group.unique().shape == (10, 2)
 
     assert df.with_columns(
         pl.col("y").least_squares.ols(pl.col("x1"), pl.col("x2"), mode="coefficients").over("group")
@@ -423,3 +423,61 @@ def test_moving_window_regressions_over():
         rtol=1.0e-4,
         atol=1.0e-4,
     )
+
+
+def test_predict():
+    df = _make_data(n_groups=1)
+    df_test = _make_data(n=20, n_groups=1)
+
+    # estimate coefficients
+    df_coefficients = (
+        df.lazy()
+        .select(
+            "group",
+            pl.col("y")
+            .least_squares.ols(pl.col("x1"), pl.col("x2"), mode="coefficients")
+            .over("group"),
+        )
+        .unique()
+    )
+
+    # compute predictions as a rust expression
+    predictions = (
+        df_test.lazy()
+        .join(df_coefficients, on="group")
+        .select(
+            pl.col("coefficients").least_squares.predict(
+                pl.col("x1"), pl.col("x2"), name="predictions"
+            )
+        )
+        .collect()
+        .to_numpy()
+    )
+
+    # compare to predictions computed as dot product of train coefficients with test data
+    expected = (
+        df_test.drop("group")
+        .to_numpy()
+        .dot(df_coefficients.unnest("coefficients").collect().to_numpy().T)
+    )
+    assert np.allclose(predictions, expected)
+
+
+def test_predict_complex():
+    df = _make_data(n_groups=10)
+    df = (
+        df.lazy()
+        .with_columns(
+            predictions_1=pl.col("y")
+            .least_squares.rls(pl.col("x1"), pl.col("x2"), mode="predictions")
+            .over("group"),
+            coefficients=pl.col("y")
+            .least_squares.rls(pl.col("x1"), pl.col("x2"), mode="coefficients")
+            .over("group"),
+        )
+        .with_columns(
+            predictions_2=pl.col("coefficients").least_squares.predict(pl.col("x1"), pl.col("x2"))
+        )
+        .collect()
+    )
+    assert np.allclose(df["predictions_1"], df["predictions_2"])

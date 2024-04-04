@@ -14,6 +14,7 @@ __all__ = [
     "compute_recursive_least_squares",
     "compute_rolling_least_squares",
     "least_squares_from_formula",
+    "predict",
     "OLSKwargs",
     "RLSKwargs",
     "RollingKwargs",
@@ -156,9 +157,7 @@ def compute_least_squares(
                 returns_scalar=True,
             )
             .alias("coefficients")
-            .list
-            # convert from list[f32] to pl.Struct
-            .to_struct(fields=[f.meta.output_name() for f in features])
+            .struct.rename_fields([f.meta.output_name() for f in features])
         )
     else:
         predictions = (
@@ -234,9 +233,7 @@ def compute_recursive_least_squares(
                 is_elementwise=False,
             )
             .alias("coefficients")
-            .list
-            # convert from list[f32] to pl.Struct
-            .to_struct(fields=[f.meta.output_name() for f in features])
+            .struct.rename_fields([f.meta.output_name() for f in features])
         )
     else:
         predictions = (
@@ -252,7 +249,7 @@ def compute_recursive_least_squares(
         if mode == "predictions":
             return predictions
         else:
-            return (target - predictions).alias("residuals")
+            return target - predictions
 
 
 def compute_rolling_least_squares(
@@ -303,9 +300,7 @@ def compute_rolling_least_squares(
                 is_elementwise=False,
             )
             .alias("coefficients")
-            .list
-            # convert from list[f32] to pl.Struct
-            .to_struct(fields=[f.meta.output_name() for f in features])
+            .struct.rename_fields([f.meta.output_name() for f in features])
         )
     else:
         predictions = (
@@ -364,3 +359,12 @@ def least_squares_from_formula(
         sample_weights=sample_weights,
         mode=mode,
     )
+
+
+def predict(coefficients: IntoExpr, *features: pl.Expr, name: Optional[str] = None) -> pl.Expr:
+    return register_plugin_function(
+        plugin_path=Path(__file__).parent,
+        function_name="predict",
+        args=[coefficients, *features],
+        is_elementwise=False,
+    ).alias(name or "predictions")
