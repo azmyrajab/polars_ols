@@ -63,6 +63,25 @@ jobs:
       - run: make install
       - run: make test
 
+  windows_tests:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        target: [ x64 ]
+        python-version: ["3.8", "3.11"]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Set up Rust
+        run: rustup show
+      - uses: mozilla-actions/sccache-action@v0.0.3
+      - run: make venv
+      - run: make pre-commit
+      - run: make install
+      - run: make test
+
   linux:
     runs-on: ubuntu-latest
     strategy:

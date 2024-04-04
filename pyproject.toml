@@ -79,7 +79,7 @@ lint.ignore = [
 lint.pylint.max-args = 6
 
 [tool.black]
-target-version = ["py310", "py311"]
+target-version = ["py38", "py39", "py310", "py311"]
 line-length = 100
 include = '\.pyi?$' # All Python files
 exclude = '''

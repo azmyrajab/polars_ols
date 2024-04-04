@@ -441,11 +441,12 @@ def test_moving_window_regressions_over():
             .over("group")
             .alias("coef_ols_group"),  # full sample OLS per group
         )
-    ).collect()
+    ).collect().rechunk()
 
     # As of the last sample per group: RLS & rolling regression should behave identically
     # to full sample OLS per group (the way they were set up above)
     df_last = df.group_by("group").last()
+
     assert np.allclose(
         df_last.unnest("coef_ols_group").select("x1", "x2"),
         df_last.unnest("coef_rolling_ols_group").select("x1", "x2"),
