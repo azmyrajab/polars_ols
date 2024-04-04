@@ -110,3 +110,12 @@ class LeastSquares:
 
     def predict(self, *features: pl.Expr, name: Optional[str] = None) -> pl.Expr:
         return predict(self._expr, *features, name=name)
+
+    def predict_from_formula(self, formula: str, **kwargs) -> pl.Expr:
+        features, add_intercept = build_expressions_from_patsy_formula(
+            formula, include_dependent_variable=False
+        )
+        has_const = any(f.meta.output_name == "const" for f in features)
+        if add_intercept and not has_const:
+            features += [features[-1].mul(0.0).add(1.0).alias("const")]
+        return self.predict(*features, **kwargs)

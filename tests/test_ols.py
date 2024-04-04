@@ -463,6 +463,21 @@ def test_predict():
     assert np.allclose(predictions, expected)
 
 
+def test_predict_formula():
+    df = _make_data()
+    df = (
+        df.lazy()
+        .with_columns(
+            coefficients=pl.col("y").least_squares.from_formula("x1 + x2", mode="coefficients"),
+            predictions_1=pl.col("y").least_squares.from_formula("x1 + x2", mode="predictions"),
+        )
+        .with_columns(
+            predictions_2=pl.col("coefficients").least_squares.predict_from_formula("x1 + x2")
+        )
+    ).collect()
+    assert np.allclose(df["predictions_1"], df["predictions_2"])
+
+
 def test_predict_complex():
     df = _make_data(n_groups=10)
     df = (

@@ -1,3 +1,4 @@
+import logging
 from dataclasses import asdict, dataclass
 from functools import partial
 from pathlib import Path
@@ -8,6 +9,8 @@ from polars.plugins import register_plugin_function
 from polars.type_aliases import IntoExpr
 
 from polars_ols.utils import build_expressions_from_patsy_formula, parse_into_expr
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "compute_least_squares",
@@ -88,7 +91,10 @@ def _pre_process_data(
     target = parse_into_expr(target).cast(pl.Float32)
     features = [f.cast(pl.Float32) for f in features]
     if add_intercept:
-        features += [target.mul(0.0).add(1.0).alias("intercept")]
+        if any(f.meta.output_name == "const" for f in features):
+            logger.info("feature named 'const' already detected, assuming it is an intercept")
+        else:
+            features += [target.mul(0.0).add(1.0).alias("const")]
     sqrt_w = 1.0
     if sample_weights is not None:
         sqrt_w = sample_weights.cast(pl.Float32).sqrt()

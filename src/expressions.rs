@@ -12,7 +12,6 @@ use crate::least_squares::{
     solve_elastic_net, solve_ols_qr, solve_recursive_least_squares, solve_ridge, solve_rolling_ols,
 };
 
-
 /// convert a slice of polars series into a 2D feature array.
 fn construct_features_array(inputs: &[Series]) -> Array2<f32> {
     let m = inputs.len();
@@ -33,7 +32,6 @@ fn construct_features_array(inputs: &[Series]) -> Array2<f32> {
     x
 }
 
-
 /// Convert a slice of polars series into target & feature ndarray objects.
 pub fn convert_polars_to_ndarray(inputs: &[Series]) -> (Array1<f32>, Array2<f32>) {
     let m = inputs.len();
@@ -50,17 +48,22 @@ pub fn convert_polars_to_ndarray(inputs: &[Series]) -> (Array1<f32>, Array2<f32>
     // note that this was faster than converting polars series -> polars dataframe -> to_ndarray
     // assume first series is targets and rest are features.
     let x = construct_features_array(&inputs[1..]);
-    assert_eq!(x.len_of(Axis(0)), y.len(), "all input series passed must be of equal length");
+    assert_eq!(
+        x.len_of(Axis(0)),
+        y.len(),
+        "all input series passed must be of equal length"
+    );
 
     (y, x)
 }
 
-
 fn coefficients_struct_dtype(input_fields: &[Field]) -> PolarsResult<Field> {
     // the first input field denotes the target, which we need not carry in output struct
-    Ok(Field::new("coefficients", DataType::Struct(input_fields[1..].to_vec())))
+    Ok(Field::new(
+        "coefficients",
+        DataType::Struct(input_fields[1..].to_vec()),
+    ))
 }
-
 
 /// Convert the coefficients into a Polars series of struct dtype.
 fn coefficients_to_struct_series(coefficients: &Array2<f32>) -> Series {
@@ -69,15 +72,13 @@ fn coefficients_to_struct_series(coefficients: &Array2<f32>) -> Series {
         coefficients
             .axis_iter(Axis(1))
             .enumerate()
-            .map(|(i, col)|
-                Series::from_vec(&i.to_string(), col.to_vec()))
+            .map(|(i, col)| Series::from_vec(&i.to_string(), col.to_vec()))
             .collect::<Vec<Series>>(),
     )
-        .unwrap();
+    .unwrap();
     // Convert DataFrame to a Series of struct dtype
     df.into_struct("coefficients").into_series()
 }
-
 
 // fn list_float_dtype(input_fields: &[Field]) -> PolarsResult<Field> {
 //     let field = Field::new(
@@ -102,7 +103,6 @@ fn coefficients_to_struct_series(coefficients: &Array2<f32>) -> Series {
 //     }
 //     chunked_builder.finish().into_series()
 // }
-
 
 /// Computes linear predictions and returns a polars series.
 fn make_predictions(features: &Array2<f32>, coefficients: Array1<f32>, name: &str) -> Series {
@@ -252,10 +252,15 @@ fn rolling_least_squares(inputs: &[Series], kwargs: RollingKwargs) -> PolarsResu
 fn predict(inputs: &[Series]) -> PolarsResult<Series> {
     // The first input is always assumed to be the coefficient struct, and the remaining
     // input series are assumed to be an equivalent number of features.
-    let coefficients_df: DataFrame = inputs[0].struct_().expect(
-        "the first input series to predict function must be of dtype struct!").clone().unnest();
+    let coefficients_df: DataFrame = inputs[0]
+        .struct_()
+        .expect("the first input series to predict function must be of dtype struct!")
+        .clone()
+        .unnest();
     let features = construct_features_array(&inputs[1..]);
-    let coefficients: Array2<f32> = coefficients_df.to_ndarray::<Float32Type>(IndexOrder::C).unwrap();
+    let coefficients: Array2<f32> = coefficients_df
+        .to_ndarray::<Float32Type>(IndexOrder::C)
+        .unwrap();
     let predictions = (&features * &coefficients).sum_axis(Axis(1));
     Ok(Series::from_vec(inputs[0].name(), predictions.to_vec()))
 }

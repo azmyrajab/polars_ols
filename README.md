@@ -112,8 +112,8 @@ shape: (2, 2)
 └───────┴───────────────────────────────┘
 ```
 
-For dynamic models (like RecursiveLeastSquares) or if in a `.over`, `.group_by`, or `.with_columns` context, the
-coefficients take the shape of the data it is applied on. For example:
+For dynamic models (like `rolling_ols`) or if in a `.over`, `.group_by`, or `.with_columns` context, the
+coefficients will take the shape of the data it is applied on. For example:
 
 ```python
 coefficients = df.with_columns(pl.col("y").least_squares.rls(pl.col("x1"), pl.col("x2"), mode="coefficients")
@@ -137,7 +137,7 @@ shape: (5, 6)
 ```
 
 Finally, for convenience, in order to compute out-of-sample predictions you can use:
-```least_squares.predict```. This saves you the effort of un-nesting the coefficients and doing the dot product in
+```least_squares.{predict, predict_from_formula}```. This saves you the effort of un-nesting the coefficients and doing the dot product in
 python and instead does this in Rust, as an expression. Usage is as follows:
 
 ```python

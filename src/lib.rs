@@ -79,9 +79,14 @@ mod tests {
     fn test_rolling_least_squares() {
         let (y, x1, x2) = make_data();
         let (targets, features) = convert_polars_to_ndarray(&[y.clone(), x1, x2]);
-        let coefficients =
-            solve_rolling_ols(&targets, &features, 1_000usize, Some(100usize),
-                              Some(true), None);
+        let coefficients = solve_rolling_ols(
+            &targets,
+            &features,
+            1_000usize,
+            Some(100usize),
+            Some(true),
+            None,
+        );
         let expected: Array1<f32> = array![1.0, 1.0];
         println!("{:?}", coefficients.slice(s![0, ..]));
         println!("{:?}", coefficients.slice(s![-1, ..]));
