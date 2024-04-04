@@ -408,40 +408,44 @@ def test_moving_window_regressions_over():
     df = _make_data(n_groups=10)
 
     df = (
-        df.lazy().select(
-            "group",
-            pl.col("y")
-            .least_squares.rolling_ols(
-                pl.col("x1"),
-                pl.col("x2"),
-                mode="coefficients",
-                window_size=1_000_000,
-                min_periods=2,
-                # larger than data window size equivalent to expanding window
+        (
+            df.lazy().select(
+                "group",
+                pl.col("y")
+                .least_squares.rolling_ols(
+                    pl.col("x1"),
+                    pl.col("x2"),
+                    mode="coefficients",
+                    window_size=1_000_000,
+                    min_periods=2,
+                    # larger than data window size equivalent to expanding window
+                )
+                .over("group")
+                .alias("coef_rolling_ols_group"),
+                pl.col("y")
+                .least_squares.rls(
+                    pl.col("x1"),
+                    pl.col("x2"),
+                    half_life=None,
+                    initial_state_covariance=1.0e6,
+                    mode="coefficients",
+                    # no forgetting factor + diffuse prior equivalent to expanding window
+                )
+                .over("group")
+                .alias("coef_rls_group"),
+                pl.col("y")
+                .least_squares.ols(
+                    pl.col("x1"),
+                    pl.col("x2"),
+                    mode="coefficients",
+                )
+                .over("group")
+                .alias("coef_ols_group"),  # full sample OLS per group
             )
-            .over("group")
-            .alias("coef_rolling_ols_group"),
-            pl.col("y")
-            .least_squares.rls(
-                pl.col("x1"),
-                pl.col("x2"),
-                half_life=None,
-                initial_state_covariance=1.0e6,
-                mode="coefficients",
-                # no forgetting factor + diffuse prior equivalent to expanding window
-            )
-            .over("group")
-            .alias("coef_rls_group"),
-            pl.col("y")
-            .least_squares.ols(
-                pl.col("x1"),
-                pl.col("x2"),
-                mode="coefficients",
-            )
-            .over("group")
-            .alias("coef_ols_group"),  # full sample OLS per group
         )
-    ).collect().rechunk()
+        .collect()
+        .rechunk()
+    )
 
     # As of the last sample per group: RLS & rolling regression should behave identically
     # to full sample OLS per group (the way they were set up above)
