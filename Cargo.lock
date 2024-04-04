@@ -1590,7 +1590,7 @@ dependencies = [
 
 [[package]]
 name = "polars_ols"
-version = "0.2.1"
+version = "0.2.3"
 dependencies = [
  "approx",
  "faer",

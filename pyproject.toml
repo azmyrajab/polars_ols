@@ -4,6 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "polars-ols"
+description = "Polars Least Squares Extension"
 requires-python = ">=3.8"
 classifiers = [
   "Programming Language :: Rust",
@@ -14,9 +15,12 @@ authors = [
   {name = "Azmy Rajab", email = "azmy.rajab@gmail.com"}
 ]
 dependencies = [
-  "polars >= 0.19.0",
+  "polars >= 0.20.6",
 ]
 keywords = ["polars-extension", "linear-regression"]
+readme = "README.md"
+license = { file = "LICENSE" }
+
 
 [tool.maturin]
 module-name = "polars_ols._polars_ols"
