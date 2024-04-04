@@ -367,10 +367,31 @@ def least_squares_from_formula(
     )
 
 
-def predict(coefficients: IntoExpr, *features: pl.Expr, name: Optional[str] = None) -> pl.Expr:
+def predict(
+    coefficients: IntoExpr,
+    *features: pl.Expr,
+    name: Optional[str] = None,
+    add_intercept: bool = False,
+) -> pl.Expr:
+    """Helper which computes predictions as a product of (aligned) coefficients with features.
+
+    Args:
+        coefficients: Polars expression returning a coefficients struct.
+        *features: variable number of feature expressions.
+        add_intercept: boolean indicating if a constant should be added to features.
+
+    Returns:
+        polars expression denoting computed predictions.
+    """
+    if add_intercept:
+        if any(f.meta.output_name == "const" for f in features):
+            logger.warning("feature named 'const' already detected, assuming it is the intercept")
+        else:
+            features += (features[-1].mul(0.0).add(1.0).alias("const"),)
+
     return register_plugin_function(
         plugin_path=Path(__file__).parent,
         function_name="predict",
-        args=[coefficients, *features],
+        args=[coefficients, *(f.cast(pl.Float32) for f in features)],
         is_elementwise=False,
     ).alias(name or "predictions")

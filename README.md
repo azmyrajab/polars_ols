@@ -210,4 +210,5 @@ Credits & Related Projects
 Future Work / TODOs
 ------------
 - Support generic types, in rust implementations, so that both f32 and f64 types are recognized. Right now data is cast to f32 prior to estimation
+- Handle nulls more clearly
 - Add more detailed documentation on supported models, signatures, and API

@@ -56,7 +56,11 @@ def test_ols():
 def test_coefficients_ols():
     df = _make_data()
     coef = (
-        df.select(pl.col("y").least_squares.from_formula("x1 + x2 -1", mode="coefficients"))
+        df.select(
+            pl.col("y")
+            .least_squares.from_formula("x1 + x2 -1", mode="coefficients")
+            .alias("coefficients")
+        )
         .unnest("coefficients")
         .to_numpy()[0]
     )
@@ -68,7 +72,10 @@ def test_coefficients_ols_groups():
     coef_group = (
         df.select(
             "group",
-            pl.col("y").least_squares.from_formula("x1 + x2 -1", mode="coefficients").over("group"),
+            pl.col("y")
+            .least_squares.from_formula("x1 + x2 -1", mode="coefficients")
+            .over("group")
+            .alias("coefficients"),
         )
         .unique()
         .unnest("coefficients")
@@ -77,7 +84,11 @@ def test_coefficients_ols_groups():
 
     coef_group_1 = (
         df.filter(pl.col("group") == 1)
-        .select(pl.col("y").least_squares.from_formula("x1 + x2 -1", mode="coefficients"))
+        .select(
+            pl.col("y")
+            .least_squares.from_formula("x1 + x2 -1", mode="coefficients")
+            .alias("coefficients")
+        )
         .unnest("coefficients")
     )
     assert np.allclose(coef_group.filter(pl.col("group") == 1).select("x1", "x2"), coef_group_1)
@@ -86,24 +97,32 @@ def test_coefficients_ols_groups():
 def test_coefficients_shape_broadcast():
     df = _make_data(n=10_000, n_groups=10)
     assert df.select(
-        pl.col("y").least_squares.ols(pl.col("x1"), pl.col("x2"), mode="coefficients")
+        pl.col("y")
+        .least_squares.ols(pl.col("x1"), pl.col("x2"), mode="coefficients")
+        .alias("coefficients")
     ).shape == (1, 1)
 
     assert df.with_columns(
-        pl.col("y").least_squares.ols(pl.col("x1"), pl.col("x2"), mode="coefficients")
+        pl.col("y")
+        .least_squares.ols(pl.col("x1"), pl.col("x2"), mode="coefficients")
+        .alias("coefficients")
     ).shape == (10_000, 5)
 
     df_group = df.select(
         pl.col("y")
         .least_squares.ols(pl.col("x1"), pl.col("x2"), mode="coefficients")
-        .over("group"),
+        .over("group")
+        .alias("coefficients"),
         "group",
     )
     assert df_group.shape == (10_000, 2)
     assert df_group.unique().shape == (10, 2)
 
     assert df.with_columns(
-        pl.col("y").least_squares.ols(pl.col("x1"), pl.col("x2"), mode="coefficients").over("group")
+        pl.col("y")
+        .least_squares.ols(pl.col("x1"), pl.col("x2"), mode="coefficients")
+        .over("group")
+        .alias("coefficients")
     ).shape == (10_000, 5)
 
 
@@ -232,7 +251,8 @@ def test_elastic_net():
     coef = (
         df.lazy()
         .select(
-            pl.col("y").least_squares.from_formula(
+            pl.col("y")
+            .least_squares.from_formula(
                 "x1 + x2 -1",
                 mode="coefficients",
                 l1_ratio=0.5,
@@ -240,6 +260,7 @@ def test_elastic_net():
                 max_iter=1_000,
                 tol=0.0001,
             )
+            .alias("coefficients")
         )
         .unnest("coefficients")
         .collect()
@@ -259,7 +280,8 @@ def test_elastic_net_non_negative():
     coef = (
         df.lazy()
         .select(
-            pl.col("y").least_squares.elastic_net(
+            pl.col("y")
+            .least_squares.elastic_net(
                 pl.col("x1"),
                 -pl.col("x2"),
                 mode="coefficients",
@@ -269,6 +291,7 @@ def test_elastic_net_non_negative():
                 tol=0.0001,
                 positive=True,
             )
+            .alias("coefficients")
         )
         .unnest("coefficients")
         .collect()
@@ -285,7 +308,8 @@ def test_recursive_least_squares():
     coef_rls = (
         df.lazy()
         .select(
-            pl.col("y").least_squares.rls(
+            pl.col("y")
+            .least_squares.rls(
                 pl.col("x1"),
                 pl.col("x2"),
                 mode="coefficients",
@@ -294,6 +318,7 @@ def test_recursive_least_squares():
                 # arbitrarily weak L2 (diffuse) prior
                 initial_state_covariance=1_000_000.0,
             )
+            .alias("coefficients")
         )
         .unnest("coefficients")
         .collect()
@@ -303,7 +328,11 @@ def test_recursive_least_squares():
     # full sample OLS
     coef_ols = (
         df.lazy()
-        .select(pl.col("y").least_squares.ols(pl.col("x1"), pl.col("x2"), mode="coefficients"))
+        .select(
+            pl.col("y")
+            .least_squares.ols(pl.col("x1"), pl.col("x2"), mode="coefficients")
+            .alias("coefficients")
+        )
         .unnest("coefficients")
         .collect()
         .to_numpy()
@@ -321,7 +350,8 @@ def test_recursive_least_squares_prior():
     coef_rls_prior = (
         df.lazy()
         .select(
-            pl.col("y").least_squares.rls(
+            pl.col("y")
+            .least_squares.rls(
                 pl.col("x1"),
                 pl.col("x2"),
                 mode="coefficients",
@@ -330,6 +360,7 @@ def test_recursive_least_squares_prior():
                 initial_state_covariance=1.0e-6,  # arbitrarily strong L2 prior
                 initial_state_mean=[0.25, 0.25],  # custom prior
             )
+            .alias("coefficients")
         )
         .unnest("coefficients")
         .collect()
@@ -352,13 +383,15 @@ def test_rolling_least_squares():
         coef_rolling = (
             df.lazy()
             .select(
-                pl.col("y").least_squares.rolling_ols(
+                pl.col("y")
+                .least_squares.rolling_ols(
                     pl.col("x1"),
                     pl.col("x2"),
                     mode="coefficients",
                     window_size=252,
                     min_periods=2,
                 )
+                .alias("coefficients")
             )
             .unnest("coefficients")
             .collect()
@@ -436,7 +469,8 @@ def test_predict():
             "group",
             pl.col("y")
             .least_squares.ols(pl.col("x1"), pl.col("x2"), mode="coefficients")
-            .over("group"),
+            .over("group")
+            .alias("coefficients"),
         )
         .unique()
     )
