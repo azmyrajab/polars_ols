@@ -20,16 +20,17 @@ def timer(msg: str | None = None, precision: int = 3) -> float:
     end = time.perf_counter()
 
 
-def _make_data(n: int = 10_000):
+def _make_data(n: int = 10_000, n_groups: int | None = None):
     rng = np.random.default_rng(0)
     array = rng.normal(size=(n, 2))
-    return pl.DataFrame(
-        {
-            "y": array.sum(axis=1) + rng.normal(size=n, scale=0.1),
-            "x1": array[:, 0],
-            "x2": array[:, 1],
-        }
-    ).cast(pl.Float32)
+    data = {
+        "y": array.sum(axis=1) + rng.normal(size=n, scale=0.1),
+        "x1": array[:, 0],
+        "x2": array[:, 1],
+    }
+    if n_groups is not None:
+        data |= {"group": rng.integers(n_groups, size=n)}
+    return pl.DataFrame(data).with_columns(pl.col(pl.FLOAT_DTYPES).cast(pl.Float32))
 
 
 def test_ols():
@@ -52,12 +53,58 @@ def test_ols():
     assert np.allclose(df["predictions"], df["predictions2"], atol=1.0e-4, rtol=1.0e-4)
 
 
-def test_ols_coefficients():
+def test_coefficients_ols():
     df = _make_data()
-    coef = df.select(
-        pl.col("y").least_squares.from_formula("x1 + x2 -1", mode="coefficients")
-    ).to_numpy()
+    coef = (
+        df.select(pl.col("y").least_squares.from_formula("x1 + x2 -1", mode="coefficients"))
+        .unnest("coefficients")
+        .to_numpy()[0]
+    )
     assert np.allclose(coef, [1.0, 1.0], atol=1.0e-2, rtol=1.0e-2)
+
+
+def test_coefficients_ols_groups():
+    df = _make_data(n_groups=10)
+    coef_group = (
+        df.select(
+            "group",
+            pl.col("y").least_squares.from_formula("x1 + x2 -1", mode="coefficients").over("group"),
+        )
+        .unique()
+        .unnest("coefficients")
+    )
+    assert len(coef_group) == 10
+
+    coef_group_1 = (
+        df.filter(pl.col("group") == 1)
+        .select(pl.col("y").least_squares.from_formula("x1 + x2 -1", mode="coefficients"))
+        .unnest("coefficients")
+    )
+    assert np.allclose(coef_group.filter(pl.col("group") == 1).select("x1", "x2"), coef_group_1)
+
+
+def test_coefficients_shape_broadcast():
+    df = _make_data(n=10_000, n_groups=10)
+    assert df.select(
+        pl.col("y").least_squares.ols(pl.col("x1"), pl.col("x2"), mode="coefficients")
+    ).shape == (1, 1)
+
+    assert df.with_columns(
+        pl.col("y").least_squares.ols(pl.col("x1"), pl.col("x2"), mode="coefficients")
+    ).shape == (10_000, 5)
+
+    df_group = df.select(
+        pl.col("y")
+        .least_squares.ols(pl.col("x1"), pl.col("x2"), mode="coefficients")
+        .over("group"),
+        "group",
+    )
+    assert df_group.shape == (10_000, 2)
+    assert df_group.unique() == (10, 2)
+
+    assert df.with_columns(
+        pl.col("y").least_squares.ols(pl.col("x1"), pl.col("x2"), mode="coefficients").over("group")
+    ).shape == (10_000, 5)
 
 
 def test_ols_residuals():
@@ -185,8 +232,7 @@ def test_elastic_net():
     coef = (
         df.lazy()
         .select(
-            pl.col("y")
-            .least_squares.from_formula(
+            pl.col("y").least_squares.from_formula(
                 "x1 + x2 -1",
                 mode="coefficients",
                 l1_ratio=0.5,
@@ -194,8 +240,8 @@ def test_elastic_net():
                 max_iter=1_000,
                 tol=0.0001,
             )
-            .alias("coefficients")
         )
+        .unnest("coefficients")
         .collect()
         .to_numpy()
         .flatten()
@@ -213,8 +259,7 @@ def test_elastic_net_non_negative():
     coef = (
         df.lazy()
         .select(
-            pl.col("y")
-            .least_squares.elastic_net(
+            pl.col("y").least_squares.elastic_net(
                 pl.col("x1"),
                 -pl.col("x2"),
                 mode="coefficients",
@@ -224,8 +269,8 @@ def test_elastic_net_non_negative():
                 tol=0.0001,
                 positive=True,
             )
-            .alias("coefficients")
         )
+        .unnest("coefficients")
         .collect()
         .to_numpy()
         .flatten()
@@ -240,8 +285,7 @@ def test_recursive_least_squares():
     coef_rls = (
         df.lazy()
         .select(
-            pl.col("y")
-            .least_squares.rls(
+            pl.col("y").least_squares.rls(
                 pl.col("x1"),
                 pl.col("x2"),
                 mode="coefficients",
@@ -250,18 +294,17 @@ def test_recursive_least_squares():
                 # arbitrarily weak L2 (diffuse) prior
                 initial_state_covariance=1_000_000.0,
             )
-            .alias("coefficients")
         )
-        .select(pl.col("coefficients").list.to_array(2))
+        .unnest("coefficients")
         .collect()
         .to_numpy()
-        .T
     )
 
     # full sample OLS
     coef_ols = (
         df.lazy()
         .select(pl.col("y").least_squares.ols(pl.col("x1"), pl.col("x2"), mode="coefficients"))
+        .unnest("coefficients")
         .collect()
         .to_numpy()
         .flatten()
@@ -278,8 +321,7 @@ def test_recursive_least_squares_prior():
     coef_rls_prior = (
         df.lazy()
         .select(
-            pl.col("y")
-            .least_squares.rls(
+            pl.col("y").least_squares.rls(
                 pl.col("x1"),
                 pl.col("x2"),
                 mode="coefficients",
@@ -288,12 +330,10 @@ def test_recursive_least_squares_prior():
                 initial_state_covariance=1.0e-6,  # arbitrarily strong L2 prior
                 initial_state_mean=[0.25, 0.25],  # custom prior
             )
-            .alias("coefficients")
         )
-        .select(pl.col("coefficients").list.to_array(2))
+        .unnest("coefficients")
         .collect()
         .to_numpy()
-        .T
     )
 
     # given few samples and strong prior strength, the coefficients are nearly
@@ -312,23 +352,74 @@ def test_rolling_least_squares():
         coef_rolling = (
             df.lazy()
             .select(
-                pl.col("y")
-                .least_squares.rolling_ols(
+                pl.col("y").least_squares.rolling_ols(
                     pl.col("x1"),
                     pl.col("x2"),
                     mode="coefficients",
                     window_size=252,
                     min_periods=2,
                 )
-                .alias("coefficients")
             )
-            .select(pl.col("coefficients").list.to_array(2))
+            .unnest("coefficients")
             .collect()
             .to_numpy()
-            .T
         )
     with timer("rolling ols statsmodels"):
         mdl = RollingOLS(
             df["y"].to_numpy(), df[["x1", "x2"]].to_numpy(), window=252, min_nobs=2, expanding=True
         ).fit()
     assert np.allclose(coef_rolling[1:], mdl.params[1:].astype("float32"), rtol=1.0e-3, atol=1.0e-3)
+
+
+def test_moving_window_regressions_over():
+    df = _make_data(n_groups=10)
+
+    df = (
+        df.lazy().select(
+            "group",
+            pl.col("y")
+            .least_squares.rolling_ols(
+                pl.col("x1"),
+                pl.col("x2"),
+                mode="coefficients",
+                window_size=1_000_000,
+                min_periods=2,
+                # larger than data window size equivalent to expanding window
+            )
+            .over("group")
+            .alias("coef_rolling_ols_group"),
+            pl.col("y")
+            .least_squares.rls(
+                pl.col("x1"),
+                pl.col("x2"),
+                half_life=None,
+                initial_state_covariance=1.0e6,
+                mode="coefficients",
+                # no forgetting factor + diffuse prior equivalent to expanding window
+            )
+            .over("group")
+            .alias("coef_rls_group"),
+            pl.col("y")
+            .least_squares.ols(
+                pl.col("x1"),
+                pl.col("x2"),
+                mode="coefficients",
+            )
+            .over("group")
+            .alias("coef_ols_group"),  # full sample OLS per group
+        )
+    ).collect()
+
+    # As of the last sample per group: RLS & rolling regression should behave identically
+    # to full sample OLS per group (the way they were set up above)
+    df_last = df.group_by("group").last()
+    assert np.allclose(
+        df_last.unnest("coef_ols_group").select("x1", "x2"),
+        df_last.unnest("coef_rolling_ols_group").select("x1", "x2"),
+    )
+    assert np.allclose(
+        df_last.unnest("coef_ols_group").select("x1", "x2"),
+        df_last.unnest("coef_rls_group").select("x1", "x2"),
+        rtol=1.0e-4,
+        atol=1.0e-4,
+    )

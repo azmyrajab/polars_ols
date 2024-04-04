@@ -145,13 +145,20 @@ def compute_least_squares(
 
     # register either coefficient or prediction plugin functions
     if mode == "coefficients":
-        return register_plugin_function(
-            plugin_path=Path(__file__).parent,
-            function_name="least_squares_coefficients",
-            args=[target, *features],
-            kwargs=ols_kwargs.to_dict(),
-            is_elementwise=False,
-            changes_length=True,
+        return (
+            register_plugin_function(
+                plugin_path=Path(__file__).parent,
+                function_name="least_squares_coefficients",
+                args=[target, *features],
+                kwargs=ols_kwargs.to_dict(),
+                is_elementwise=False,
+                changes_length=True,
+                returns_scalar=True,
+            )
+            .alias("coefficients")
+            .list
+            # convert from list[f32] to pl.Struct
+            .to_struct(fields=[f.meta.output_name() for f in features])
         )
     else:
         predictions = (
@@ -167,49 +174,7 @@ def compute_least_squares(
         if mode == "predictions":
             return predictions
         else:
-            return (target - predictions).alias("residuals")
-
-
-def least_squares_from_formula(
-    formula: str,
-    sample_weights: Optional[pl.Expr] = None,
-    mode: Literal["predictions", "residuals", "coefficients"] = "predictions",
-    **kwargs,
-) -> pl.Expr:
-    """Performs least squares regression using a formula.
-
-    Depending on choice of additional kwargs dispatches either rolling, recursive,
-    on static least squares compute functions.
-
-    Args:
-        formula: Patsy-style formula string.
-        **kwargs: Additional keyword arguments for the least squares function.
-
-    Returns:
-        Resulting expression based on the formula.
-    """
-    expressions, add_intercept = build_expressions_from_patsy_formula(
-        formula, include_dependent_variable=True
-    )
-
-    # resolve additional kwargs and relevant ols compute function
-    if kwargs.get("half_life"):
-        rls_kwargs: RLSKwargs = RLSKwargs(**kwargs)
-        func = partial(compute_recursive_least_squares, rls_kwargs=rls_kwargs)
-    elif kwargs.get("window_size"):
-        rolling_kwargs: RollingKwargs = RollingKwargs(**kwargs)
-        func = partial(compute_rolling_least_squares, rolling_kwargs=rolling_kwargs)
-    else:
-        ols_kwargs: OLSKwargs = OLSKwargs(**kwargs)
-        func = partial(compute_least_squares, ols_kwargs=ols_kwargs)
-
-    return func(
-        expressions[0],
-        *expressions[1:],
-        add_intercept=add_intercept,
-        sample_weights=sample_weights,
-        mode=mode,
-    )
+            return target - predictions
 
 
 def compute_recursive_least_squares(
@@ -260,13 +225,18 @@ def compute_recursive_least_squares(
 
     # register either coefficient or prediction plugin functions
     if mode == "coefficients":
-        return register_plugin_function(
-            plugin_path=Path(__file__).parent,
-            function_name="recursive_least_squares_coefficients",
-            args=[target, *features],
-            kwargs=rls_kwargs.to_dict(),
-            is_elementwise=False,
-            changes_length=True,
+        return (
+            register_plugin_function(
+                plugin_path=Path(__file__).parent,
+                function_name="recursive_least_squares_coefficients",
+                args=[target, *features],
+                kwargs=rls_kwargs.to_dict(),
+                is_elementwise=False,
+            )
+            .alias("coefficients")
+            .list
+            # convert from list[f32] to pl.Struct
+            .to_struct(fields=[f.meta.output_name() for f in features])
         )
     else:
         predictions = (
@@ -324,13 +294,18 @@ def compute_rolling_least_squares(
 
     # register either coefficient or prediction plugin functions
     if mode == "coefficients":
-        return register_plugin_function(
-            plugin_path=Path(__file__).parent,
-            function_name="rolling_least_squares_coefficients",
-            args=[target, *features],
-            kwargs=rolling_kwargs.to_dict(),
-            is_elementwise=False,
-            changes_length=True,
+        return (
+            register_plugin_function(
+                plugin_path=Path(__file__).parent,
+                function_name="rolling_least_squares_coefficients",
+                args=[target, *features],
+                kwargs=rolling_kwargs.to_dict(),
+                is_elementwise=False,
+            )
+            .alias("coefficients")
+            .list
+            # convert from list[f32] to pl.Struct
+            .to_struct(fields=[f.meta.output_name() for f in features])
         )
     else:
         predictions = (
@@ -346,4 +321,46 @@ def compute_rolling_least_squares(
         if mode == "predictions":
             return predictions
         else:
-            return (target - predictions).alias("residuals")
+            return target - predictions
+
+
+def least_squares_from_formula(
+    formula: str,
+    sample_weights: Optional[pl.Expr] = None,
+    mode: Literal["predictions", "residuals", "coefficients"] = "predictions",
+    **kwargs,
+) -> pl.Expr:
+    """Performs least squares regression using a formula.
+
+    Depending on choice of additional kwargs dispatches either rolling, recursive,
+    on static least squares compute functions.
+
+    Args:
+        formula: Patsy-style formula string.
+        **kwargs: Additional keyword arguments for the least squares function.
+
+    Returns:
+        Resulting expression based on the formula.
+    """
+    expressions, add_intercept = build_expressions_from_patsy_formula(
+        formula, include_dependent_variable=True
+    )
+
+    # resolve additional kwargs and relevant ols compute function
+    if kwargs.get("half_life"):
+        rls_kwargs: RLSKwargs = RLSKwargs(**kwargs)
+        func = partial(compute_recursive_least_squares, rls_kwargs=rls_kwargs)
+    elif kwargs.get("window_size"):
+        rolling_kwargs: RollingKwargs = RollingKwargs(**kwargs)
+        func = partial(compute_rolling_least_squares, rolling_kwargs=rolling_kwargs)
+    else:
+        ols_kwargs: OLSKwargs = OLSKwargs(**kwargs)
+        func = partial(compute_least_squares, ols_kwargs=ols_kwargs)
+
+    return func(
+        expressions[0],
+        *expressions[1:],
+        add_intercept=add_intercept,
+        sample_weights=sample_weights,
+        mode=mode,
+    )
