@@ -3,6 +3,7 @@ from contextlib import contextmanager
 
 import numpy as np
 import polars as pl
+import pytest
 import statsmodels.formula.api as smf
 from sklearn.linear_model import ElasticNet
 from statsmodels.regression.rolling import RollingOLS
@@ -51,6 +52,37 @@ def test_ols():
             df = df.with_columns(predictions2=pl.lit(x @ coef).flatten())
 
     assert np.allclose(df["predictions"], df["predictions2"], atol=1.0e-4, rtol=1.0e-4)
+
+
+def test_fit_missing_data():
+    df = _make_data()
+    rng = np.random.default_rng(0)
+
+    def insert_nulls(val):
+        return None if rng.random() < 0.1 else val
+
+    df = df.with_columns(
+        *(pl.col(c).map_elements(insert_nulls, return_dtype=pl.Float32) for c in df.columns)
+    )
+
+    with pytest.raises(pl.exceptions.ComputeError):
+        df.select(pl.col("y").least_squares.ols(pl.col("x1"), pl.col("x2"), null_policy="ignore"))
+
+    # test zero policy is sane
+    assert np.allclose(
+        df.select(pl.col("y").least_squares.ols(pl.col("x1"), pl.col("x2"), null_policy="zero")),
+        df.fill_null(0.0).select(
+            pl.col("y").least_squares.ols(pl.col("x1"), pl.col("x2"), null_policy="ignore")
+        ),
+    )
+
+    # test drop policy is sane
+    assert np.allclose(
+        df.select(pl.col("y").least_squares.ols(pl.col("x1"), pl.col("x2"), null_policy="drop")),
+        df.drop_nulls().select(
+            pl.col("y").least_squares.ols(pl.col("x1"), pl.col("x2"), null_policy="ignore")
+        ),
+    )
 
 
 def test_coefficients_ols():

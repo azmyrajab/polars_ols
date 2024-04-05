@@ -1,8 +1,8 @@
 import logging
 from dataclasses import asdict, dataclass
-from functools import partial
+from functools import partial, reduce
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Set, get_args
 
 import polars as pl
 from polars.plugins import register_plugin_function
@@ -21,7 +21,15 @@ __all__ = [
     "OLSKwargs",
     "RLSKwargs",
     "RollingKwargs",
+    "NullPolicy",
+    "OutputMode",
 ]
+
+NullPolicy = Literal["zero", "drop", "drop_y_zero_x", "ignore"]
+OutputMode = Literal["predictions", "residuals", "coefficients"]
+
+_VALID_NULL_POLICIES: Set[NullPolicy] = set(get_args(NullPolicy))
+_VALID_OUTPUT_MODES: Set[OutputMode] = set(get_args(OutputMode))
 
 
 @dataclass
@@ -74,7 +82,11 @@ class RollingKwargs:
 
 
 def _pre_process_data(
-    target: pl.Expr, *features: pl.Expr, sample_weights: Optional[pl.Expr], add_intercept: bool
+    target: pl.Expr,
+    *features: pl.Expr,
+    sample_weights: Optional[pl.Expr],
+    add_intercept: bool,
+    null_policy: NullPolicy,
 ):
     """Pre-processes the input data by casting it to float32 and scaling it with sample weights if
      provided.
@@ -84,17 +96,48 @@ def _pre_process_data(
         *features: Variable number of feature expressions.
         sample_weights: Optional expression representing sample weights.
         add_intercept: Whether to add an intercept column.
+        null_policy: literal defining a strategy for handling missing data.
 
     Returns:
         Tuple containing the pre-processed target, features, and sample weights.
     """
     target = parse_into_expr(target).cast(pl.Float32)
     features = [f.cast(pl.Float32) for f in features]
+
+    # handle nulls
+    match null_policy:
+        case "zero":
+            target = target.fill_null(0.0)
+            features = [f.fill_null(0.0) for f in features]
+        case "drop_y_zero_x":
+            # drops rows based on missing targets, and otherwise zero's out any
+            # remaining missing features
+            is_valid = target.is_not_null()
+            target = target.filter(is_valid)
+            features = [f.filter(is_valid).fill_null(0.0) for f in features]
+        case "drop":
+            # drops rows if either target or any feature is missing
+            is_valid_y = target.is_not_null()
+            is_valid_x = reduce(lambda x, y: x.is_not_null() & y.is_not_null(), features)
+            is_valid = is_valid_y & is_valid_x
+            features = [f.filter(is_valid) for f in features]
+            target = target.filter(is_valid)
+        case "ignore":
+            # only choose this if nulls are already handled upstream
+            pass
+        case _:
+            raise NotImplementedError(
+                f"null_policy: '{null_policy}' is not supported. "
+                f"It must be one of '{_VALID_NULL_POLICIES}'"
+            )
+
+    # handle intercept
     if add_intercept:
         if any(f.meta.output_name == "const" for f in features):
             logger.info("feature named 'const' already detected, assuming it is an intercept")
         else:
             features += [target.mul(0.0).add(1.0).alias("const")]
+    # handle sample weights
     sqrt_w = 1.0
     if sample_weights is not None:
         sqrt_w = sample_weights.cast(pl.Float32).sqrt()
@@ -108,7 +151,8 @@ def compute_least_squares(
     *features: pl.Expr,
     sample_weights: Optional[pl.Expr] = None,
     add_intercept: bool = False,
-    mode: Literal["predictions", "residuals", "coefficients"] = "predictions",
+    mode: OutputMode = "predictions",
+    null_policy: NullPolicy = "ignore",
     ols_kwargs: Optional[OLSKwargs] = None,
 ) -> pl.Expr:
     """Performs least squares regression.
@@ -123,6 +167,7 @@ def compute_least_squares(
         sample_weights: Optional expression representing sample weights.
         add_intercept: Whether to add an intercept column.
         mode: Mode of operation ("predictions", "residuals", "coefficients").
+        null_policy: Strategy for handling missing data ("zero", "drop", "ignore").
         ols_kwargs: Additional keyword arguments specific for regularized OLS models. These include:
             - "alpha": Regularization strength. Default is 0.0.
                       Expected dtype: float.
@@ -139,13 +184,13 @@ def compute_least_squares(
     Returns:
         Resulting expression based on the chosen mode.
     """
-    assert mode in {
-        "predictions",
-        "residuals",
-        "coefficients",
-    }, "'mode' must be one of {predictions, residuals, coefficients}"
+    assert mode in _VALID_OUTPUT_MODES, f"'mode' must be one of '{_VALID_OUTPUT_MODES}'"
     target, features, sqrt_w = _pre_process_data(
-        target, *features, sample_weights=sample_weights, add_intercept=add_intercept
+        target,
+        *features,
+        sample_weights=sample_weights,
+        add_intercept=add_intercept,
+        null_policy=null_policy,
     )
 
     ols_kwargs: OLSKwargs = ols_kwargs or OLSKwargs()
@@ -187,7 +232,8 @@ def compute_recursive_least_squares(
     *features: pl.Expr,
     sample_weights: Optional[pl.Expr] = None,
     add_intercept: bool = False,
-    mode: Literal["predictions", "residuals", "coefficients"] = "predictions",
+    mode: OutputMode = "predictions",
+    null_policy: NullPolicy = "ignore",
     rls_kwargs: Optional[RLSKwargs] = None,
 ) -> pl.Expr:
     """Performs an efficient recursive least squares regression (RLS).
@@ -201,6 +247,7 @@ def compute_recursive_least_squares(
         sample_weights: Optional expression representing sample weights.
         add_intercept: Whether to add an intercept column.
         mode: Mode of operation ("predictions", "residuals", "coefficients").
+        null_policy: Strategy for handling missing data ("zero", "drop", "ignore").
         rls_kwargs: Additional keyword arguments for the recursive least squares model.
             - "half_life": Half-life parameter for exponential forgetting. Default is None
             (no forgetting).
@@ -218,13 +265,13 @@ def compute_recursive_least_squares(
     Returns:
         Resulting expression based on the chosen mode.
     """
-    assert mode in {
-        "predictions",
-        "residuals",
-        "coefficients",
-    }, "'mode' must be one of {predictions, residuals, coefficients}"
+    assert mode in _VALID_OUTPUT_MODES, f"'mode' must be one of '{_VALID_OUTPUT_MODES}'"
     target, features, sqrt_w = _pre_process_data(
-        target, *features, sample_weights=sample_weights, add_intercept=add_intercept
+        target,
+        *features,
+        sample_weights=sample_weights,
+        add_intercept=add_intercept,
+        null_policy=null_policy,
     )
     rls_kwargs: RLSKwargs = rls_kwargs or RLSKwargs()
 
@@ -263,7 +310,8 @@ def compute_rolling_least_squares(
     *features: pl.Expr,
     sample_weights: Optional[pl.Expr] = None,
     add_intercept: bool = False,
-    mode: Literal["predictions", "residuals", "coefficients"] = "predictions",
+    mode: OutputMode = "predictions",
+    null_policy: NullPolicy = "ignore",
     rolling_kwargs: Optional[RollingKwargs] = None,
 ) -> pl.Expr:
     """Performs least squares regression in a rolling window fashion.
@@ -274,6 +322,7 @@ def compute_rolling_least_squares(
         sample_weights: Optional expression representing sample weights.
         add_intercept: Whether to add an intercept column.
         mode: Mode of operation ("predictions", "residuals", "coefficients").
+        null_policy: Strategy for handling missing data ("zero", "drop", "ignore").
         rolling_kwargs: Additional keyword arguments for the rolling least squares model.
             - "window_size": The size of the rolling window.
             - "min_periods": The minimum number of observations required to produce estimates.
@@ -285,13 +334,13 @@ def compute_rolling_least_squares(
     Returns:
         Resulting expression based on the chosen mode.
     """
-    assert mode in {
-        "predictions",
-        "residuals",
-        "coefficients",
-    }, "'mode' must be one of {predictions, residuals, coefficients}"
+    assert mode in _VALID_OUTPUT_MODES, f"'mode' must be one of '{_VALID_OUTPUT_MODES}'"
     target, features, sqrt_w = _pre_process_data(
-        target, *features, sample_weights=sample_weights, add_intercept=add_intercept
+        target,
+        *features,
+        sample_weights=sample_weights,
+        add_intercept=add_intercept,
+        null_policy=null_policy,
     )
     rolling_kwargs: RollingKwargs = rolling_kwargs or RollingKwargs()
 
@@ -328,7 +377,8 @@ def compute_rolling_least_squares(
 def least_squares_from_formula(
     formula: str,
     sample_weights: Optional[pl.Expr] = None,
-    mode: Literal["predictions", "residuals", "coefficients"] = "predictions",
+    mode: OutputMode = "predictions",
+    null_policy: NullPolicy = "ignore",
     **kwargs,
 ) -> pl.Expr:
     """Performs least squares regression using a formula.
@@ -338,6 +388,9 @@ def least_squares_from_formula(
 
     Args:
         formula: Patsy-style formula string.
+        sample_weights: Optional expression representing sample weights.
+        mode: Mode of operation ("predictions", "residuals", "coefficients").
+        null_policy: Strategy for handling missing data ("zero", "drop", "ignore").
         **kwargs: Additional keyword arguments for the least squares function.
 
     Returns:
@@ -363,6 +416,7 @@ def least_squares_from_formula(
         *expressions[1:],
         add_intercept=add_intercept,
         sample_weights=sample_weights,
+        null_policy=null_policy,
         mode=mode,
     )
 
@@ -370,8 +424,8 @@ def least_squares_from_formula(
 def predict(
     coefficients: IntoExpr,
     *features: pl.Expr,
-    name: Optional[str] = None,
     add_intercept: bool = False,
+    name: Optional[str] = None,
 ) -> pl.Expr:
     """Helper which computes predictions as a product of (aligned) coefficients with features.
 
@@ -379,6 +433,7 @@ def predict(
         coefficients: Polars expression returning a coefficients struct.
         *features: variable number of feature expressions.
         add_intercept: boolean indicating if a constant should be added to features.
+        name: optional str defining an alias for computed predictions expression.
 
     Returns:
         polars expression denoting computed predictions.
@@ -387,11 +442,11 @@ def predict(
         if any(f.meta.output_name == "const" for f in features):
             logger.warning("feature named 'const' already detected, assuming it is the intercept")
         else:
-            features += (features[-1].mul(0.0).add(1.0).alias("const"),)
+            features += (features[-1].fill_null(0.0).mul(0.0).add(1.0).alias("const"),)
 
     return register_plugin_function(
         plugin_path=Path(__file__).parent,
         function_name="predict",
-        args=[coefficients, *(f.cast(pl.Float32) for f in features)],
+        args=[coefficients, *(f.fill_null(0.0).cast(pl.Float32) for f in features)],
         is_elementwise=False,
     ).alias(name or "predictions")

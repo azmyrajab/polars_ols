@@ -34,6 +34,7 @@ Importing `polars_ols` will register the namespace `least_squares` provided by t
 You can build models either by either specifying polars expressions (e.g. `pl.col(...)`) for your targets and features or using
 the formula api (patsy syntax). All models support the following general (optional) arguments:
 - `mode` - a literal which determines the type of output produced by the model
+- `null_policy` - a literal which determines how to deal with missing data
 - `add_intercept` - a boolean specifying if an intercept feature should be added to the features
 - `sample_weights` - a column or expression providing non-negative weights applied to the samples
 
@@ -179,17 +180,17 @@ This benchmark was run on randomly generated data with [pyperf](https://github.c
 | Ridge                   | 262 ± 3 us       | 369 ± 231 us      | Numpy          | 1.4x                         |
 | Weighted Least Squares  | 493 ± 7 us       | 2.13 ms ± 0.22 ms | Statsmodels    | 4.3x                         |
 | Elastic Net             | 326 ± 3 us       | 87.3 ms ± 9.0 ms  | Sklearn        | 268.2x                       |
-| Recursive Least Squares | 1.39 ms ± 0.01 ms| 22.3 ms ± 0.2 ms  | Statsmodels    | 16.0x                        |
+| Recursive Least Squares | 1.39 ms ± 0.01 ms| 18.7 ms ± 1.4 ms  | Statsmodels    | 13.5x                        |
 | Rolling Least Squares   | 2.72 ms ± 0.03 ms| 22.3 ms ± 0.2 ms  | Statsmodels    | 8.2x                         |
 
 ### n_samples=10_000, n_features=100
-| Model                   | polars_ols       | Python Benchmark  | Benchmark Type | Speed-up vs Python Benchmark |
-|-------------------------|------------------|-------------------|----------------|------------------------------|
-| Least Squares           | 15.6 ms ± 0.2 ms| 29.9 ms ± 8.6 ms  | Numpy          | 1.9x                         |
-| Ridge                   | 5.81 ms ± 0.05 ms| 5.21 ms ± 0.94 ms | Numpy          | 0.9x                         |
-| Weighted Least Squares  | 16.8 ms ± 0.2 ms| 82.4 ms ± 9.1 ms  | Statsmodels    | 4.9x                         |
-| Elastic Net             | 20.9 ms ± 0.3 ms| 134 ms ± 21 ms    | Sklearn        | 6.4x                         |
-| Recursive Least Squares | 163 ms ± 28 ms  | 3.99 sec ± 0.54 sec | Statsmodels    | 24.5x                        |
+| Model                   | polars_ols       | Python Benchmark    | Benchmark Type | Speed-up vs Python Benchmark |
+|-------------------------|------------------|---------------------|----------------|------------------------------|
+| Least Squares           | 15.6 ms ± 0.2 ms| 29.9 ms ± 8.6 ms    | Numpy          | 1.9x                         |
+| Ridge                   | 5.81 ms ± 0.05 ms| 5.21 ms ± 0.94 ms   | Numpy          | 0.9x                         |
+| Weighted Least Squares  | 16.8 ms ± 0.2 ms| 82.4 ms ± 9.1 ms    | Statsmodels    | 4.9x                         |
+| Elastic Net             | 20.9 ms ± 0.3 ms| 134 ms ± 21 ms      | Sklearn        | 6.4x                         |
+| Recursive Least Squares | 163 ms ± 28 ms  | 65.7 sec ± 28.2 sec | Statsmodels    | 403.1x                       |
 | Rolling Least Squares   | 390 ms ± 10 ms  | 3.99 sec ± 0.54 sec | Statsmodels    | 10.2x                        |
 
 Numpy's `lstsq` is already a highly optimized call into LAPACK and so the scope for speed-up is limited.

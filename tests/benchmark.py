@@ -148,14 +148,14 @@ def benchmark_recursive_least_squares_statsmodels(data: pl.DataFrame):
     res = RecursiveLS(
         df["y"].to_numpy(),
         x,
-    ).fit(params_only=True)
+    ).fit()
     return data.lazy().with_columns(predictions=pl.lit((res.params * x).sum(1))).collect()
 
 
 if __name__ == "__main__":
     # example: python tests/benchmark.py --quiet --fast
     # we run the benchmarks in python (as opposed to rust) so that overhead of pyO3 is included
-    df = _make_data(n_features=10, n_samples=2_000)
+    df = _make_data(n_features=100, n_samples=10_000)
     runner = pyperf.Runner()
     runner.bench_func("benchmark_least_squares", benchmark_least_squares, df)
     runner.bench_func("benchmark_ridge", benchmark_ridge, df)
@@ -172,7 +172,7 @@ if __name__ == "__main__":
     # runner.bench_func("benchmark_elastic_net_sklearn", benchmark_elastic_net_sklearn, df)
     # runner.bench_func(
     #     "benchmark_recursive_least_squares_statsmodels",
-    #     benchmark_rolling_least_squares_statsmodels,
+    #     benchmark_recursive_least_squares_statsmodels,
     #     df,
     # )
     # runner.bench_func(

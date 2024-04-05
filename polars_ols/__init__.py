@@ -3,7 +3,9 @@ from typing import Literal, Optional
 import polars as pl
 
 from polars_ols.least_squares import (
+    NullPolicy,
     OLSKwargs,
+    OutputMode,
     RLSKwargs,
     RollingKwargs,
     compute_least_squares,
@@ -33,7 +35,8 @@ class LeastSquares:
         *features: pl.Expr,
         sample_weights: Optional[pl.Expr] = None,
         add_intercept: bool = False,
-        mode: Literal["predictions", "residuals", "coefficients"] = "predictions",
+        mode: OutputMode = "predictions",
+        null_policy: NullPolicy = "ignore",
         **ols_kwargs,
     ) -> pl.Expr:
         return compute_least_squares(
@@ -42,6 +45,7 @@ class LeastSquares:
             sample_weights=sample_weights,
             add_intercept=add_intercept,
             mode=mode,
+            null_policy=null_policy,
             ols_kwargs=OLSKwargs(**ols_kwargs),
         )
 
@@ -65,7 +69,8 @@ class LeastSquares:
         *features: pl.Expr,
         sample_weights: Optional[pl.Expr] = None,
         add_intercept: bool = False,
-        mode: Literal["predictions", "residuals", "coefficients"] = "predictions",
+        mode: OutputMode = "predictions",
+        null_policy: NullPolicy = "ignore",
         **rls_kwargs,
     ):
         return compute_recursive_least_squares(
@@ -74,6 +79,7 @@ class LeastSquares:
             sample_weights=sample_weights,
             add_intercept=add_intercept,
             mode=mode,
+            null_policy=null_policy,
             rls_kwargs=RLSKwargs(**rls_kwargs),
         )
 
@@ -82,7 +88,8 @@ class LeastSquares:
         *features: pl.Expr,
         sample_weights: Optional[pl.Expr] = None,
         add_intercept: bool = False,
-        mode: Literal["predictions", "residuals", "coefficients"] = "predictions",
+        mode: OutputMode = "predictions",
+        null_policy: NullPolicy = "ignore",
         **rolling_kwargs,
     ):
         return compute_rolling_least_squares(
@@ -91,6 +98,7 @@ class LeastSquares:
             sample_weights=sample_weights,
             add_intercept=add_intercept,
             mode=mode,
+            null_policy=null_policy,
             rolling_kwargs=RollingKwargs(**rolling_kwargs),
         )
 
@@ -111,7 +119,7 @@ class LeastSquares:
     def predict(
         self, *features: pl.Expr, name: Optional[str] = None, add_intercept: bool = False
     ) -> pl.Expr:
-        return predict(self._expr, *features, name=name, add_intercept=add_intercept)
+        return predict(self._expr, *features, add_intercept=add_intercept, name=name)
 
     def predict_from_formula(self, formula: str, name: Optional[str] = None) -> pl.Expr:
         features, add_intercept = build_expressions_from_patsy_formula(
@@ -119,4 +127,4 @@ class LeastSquares:
         )
         has_const = any(f.meta.output_name == "const" for f in features)
         add_intercept &= not has_const
-        return self.predict(*features, add_intercept=add_intercept, name=name)
+        return self.predict(*features, name=name, add_intercept=add_intercept)
