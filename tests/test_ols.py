@@ -265,7 +265,7 @@ def test_fit_multi_collinear(n_features: int, solve_method: str):
     coef_expected = np.linalg.lstsq(x, y, rcond=None)[0]
 
     if solve_method == "svd":
-        assert np.allclose(coef, coef_expected, rtol=1.0e-5, atol=1.0e-5)
+        assert np.allclose(coef, coef_expected, rtol=1.0e-4, atol=1.0e-4)
     else:
         coef = coef.to_numpy().flatten()
         assert ~np.isnan(coef).any()

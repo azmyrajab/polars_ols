@@ -23,7 +23,7 @@ jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 ndarray = { version = "*", features = ["blas"]}
-ndarray-linalg = {version = "*", features = ["openblas"]}
+ndarray-linalg = {version = "*"}
 
 # Note: BLAS is only supported by default for macOS because it is difficult for this package
 # to detect it and handle system dependencies across all other operating systems and platforms easily.

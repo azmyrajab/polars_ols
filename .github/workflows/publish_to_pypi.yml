@@ -81,7 +81,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist --find-interpreter
+          args: --release --out dist --find-interpreter --cargo-extra-args='-C link-args=-fPIC'
           sccache: 'true'
           manylinux: auto
       - name: Upload wheels
@@ -101,6 +101,7 @@ jobs:
         run: |
           choco install cmake
           choco install mingw
+          refreshenv
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
@@ -109,7 +110,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist --find-interpreter
+          args: --release --out dist --find-interpreter --cargo-extra-args='-C link-args=-fPIC'
           sccache: 'true'
       - name: Upload wheels
         uses: actions/upload-artifact@v3
