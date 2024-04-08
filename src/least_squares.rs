@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::str::FromStr;
 
 use faer::linalg::solvers::SolverCore;
@@ -88,9 +89,9 @@ pub fn solve_ols(
             .slice(s![.., 0])
             .to_owned()
     } else {
-        // compute least squares via LAPACK (SVD)
+        // compute least squares via LAPACK SVD
         x.least_squares(y)
-            .expect("failed to compute least squares solution")
+            .expect("failed to computed LAPACK SVD solution!")
             .solution
     }
 }
@@ -159,7 +160,8 @@ fn solve_ridge_svd(
     let s: Array1<f32> = s.as_2d().into_ndarray().slice(s![.., 0]).into_owned();
 
     // set singular values less than or equal to ``rcond * largest_singular_value`` to zero.
-    let cutoff = rcond.unwrap_or(1.0e-15) * norm_max;
+    let cutoff =
+        rcond.unwrap_or(f32::EPSILON * max(x_faer.ncols(), x_faer.nrows()) as f32) * norm_max;
     let s = s.map(|v| if v < &cutoff { 0. } else { *v });
 
     let binding = u.transpose() * y_faer;
@@ -168,7 +170,6 @@ fn solve_ridge_svd(
         .into_ndarray()
         .slice(s![.., 0])
         .into_owned();
-
     let d = &s / (&s * &s + alpha);
     let d_ut_y = &d * &u_t_y;
     vt.t().dot(&d_ut_y)

@@ -298,8 +298,10 @@ fn recursive_least_squares_coefficients(
     kwargs: RLSKwargs,
 ) -> PolarsResult<Series> {
     let null_policy = kwargs.get_null_policy();
-    assert!(matches!(null_policy, NullPolicy::Ignore | NullPolicy::Zero),
-            "null policies which drop rows are not yet supported for RLS");
+    assert!(
+        matches!(null_policy, NullPolicy::Ignore | NullPolicy::Zero),
+        "null policies which drop rows are not yet supported for RLS"
+    );
     let (y, x) = convert_polars_to_ndarray(inputs, &null_policy);
     let initial_state_mean = convert_option_vec_to_array1(kwargs.initial_state_mean);
     let coefficients = solve_recursive_least_squares(
@@ -316,8 +318,10 @@ fn recursive_least_squares_coefficients(
 #[polars_expr(output_type=Float32)]
 fn recursive_least_squares(inputs: &[Series], kwargs: RLSKwargs) -> PolarsResult<Series> {
     let null_policy = kwargs.get_null_policy();
-    assert!(matches!(null_policy, NullPolicy::Ignore | NullPolicy::Zero),
-           "null policies which drop rows are not yet supported for RLS");
+    assert!(
+        matches!(null_policy, NullPolicy::Ignore | NullPolicy::Zero),
+        "null policies which drop rows are not yet supported for RLS"
+    );
     let (y, x) = convert_polars_to_ndarray(inputs, &null_policy);
     let coefficients = solve_recursive_least_squares(
         &y,
@@ -336,8 +340,10 @@ fn rolling_least_squares_coefficients(
     kwargs: RollingKwargs,
 ) -> PolarsResult<Series> {
     let null_policy = kwargs.get_null_policy();
-    assert!(matches!(null_policy, NullPolicy::Ignore | NullPolicy::Zero),
-            "null policies which drop rows are not yet supported for rolling least squares");
+    assert!(
+        matches!(null_policy, NullPolicy::Ignore | NullPolicy::Zero),
+        "null policies which drop rows are not yet supported for rolling least squares"
+    );
     let (y, x) = convert_polars_to_ndarray(inputs, &null_policy);
     let coefficients = solve_rolling_ols(
         &y,
@@ -354,8 +360,10 @@ fn rolling_least_squares_coefficients(
 #[polars_expr(output_type=Float32)]
 fn rolling_least_squares(inputs: &[Series], kwargs: RollingKwargs) -> PolarsResult<Series> {
     let null_policy = kwargs.get_null_policy();
-    assert!(matches!(null_policy, NullPolicy::Ignore | NullPolicy::Zero),
-            "null policies which drop rows are not yet supported for rolling least Squares");
+    assert!(
+        matches!(null_policy, NullPolicy::Ignore | NullPolicy::Zero),
+        "null policies which drop rows are not yet supported for rolling least Squares"
+    );
     let (y, x) = convert_polars_to_ndarray(inputs, &null_policy);
     let coefficients = solve_rolling_ols(
         &y,

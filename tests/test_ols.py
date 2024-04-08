@@ -5,7 +5,7 @@ import numpy as np
 import polars as pl
 import pytest
 import statsmodels.formula.api as smf
-from sklearn.linear_model import ElasticNet
+from sklearn.linear_model import ElasticNet, Ridge
 from statsmodels.regression.rolling import RollingOLS
 
 from polars_ols import (
@@ -387,24 +387,30 @@ def test_least_squares_from_formula():
     assert np.allclose(df.select(expr).to_numpy().flatten(), expected, rtol=1.0e-4, atol=1.0e-4)
 
 
-def test_ridge():
+@pytest.mark.parametrize("solve_method", ("svd", "chol"))
+def test_ridge(solve_method: str):
     df = _make_data()
     alpha: float = 0.01
 
-    with timer("ridge python"):
+    with timer(f"\nridge python benchmark - {solve_method}"):
         for _ in range(1_000):
             x = df.select("x1", "x2").to_numpy()
             y = df.select("y").to_numpy().flatten()
-            coef_expected = np.linalg.solve((x.T @ x) + np.eye(x.shape[1]) * alpha, x.T @ y)
+            if solve_method == "chol":
+                coef_expected = np.linalg.solve((x.T @ x) + np.eye(x.shape[1]) * alpha, x.T @ y)
+            elif solve_method == "svd":
+                coef_expected = Ridge(fit_intercept=False, solver="svd").fit(x, y).coef_
+            else:
+                raise ValueError()
             expected = x @ coef_expected
 
-    with timer("ridge rust"):
+    with timer(f"ridge rust {solve_method}"):
         for _ in range(1_000):
             expr = compute_least_squares(
                 pl.col("y"),
                 pl.col("x1"),
                 pl.col("x2"),
-                ols_kwargs=OLSKwargs(alpha=alpha),
+                ols_kwargs=OLSKwargs(alpha=alpha, solve_method=solve_method),
             ).alias("predictions")
             df = df.lazy().with_columns(expr).collect()
     assert np.allclose(df["predictions"].to_numpy(), expected, rtol=1.0e-4, atol=1.0e-4)
