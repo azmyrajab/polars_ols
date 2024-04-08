@@ -181,7 +181,7 @@ def benchmark_recursive_least_squares_statsmodels(data: pl.DataFrame):
 if __name__ == "__main__":
     # example: python tests/benchmark.py --quiet --fast
     # we run the benchmarks in python (as opposed to rust) so that overhead of pyO3 is included
-    df = _make_data(n_features=5, n_samples=2_000)
+    df = _make_data(n_features=100, n_samples=10_000)
     runner = pyperf.Runner()
     runner.bench_func("benchmark_least_squares_qr", benchmark_least_squares, df, "qr")
     runner.bench_func("benchmark_least_squares_svd", benchmark_least_squares, df, "svd")

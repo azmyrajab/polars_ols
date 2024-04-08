@@ -165,12 +165,12 @@ the ```least_squares.from_formula``` and ```least_squares.least_squares``` entry
 Solve Methods
 ------------
 
-`polars-ols` provides a choice over multiple supported numerical approaches per model (via `solve_method` flag), 
-with implications on performance vs numerical accuracy. These choices are exposed to the user for full control, 
-however, if left unspecified the package will choose a reasonable default depending on context. 
+`polars-ols` provides a choice over multiple supported numerical approaches per model (via `solve_method` flag),
+with implications on performance vs numerical accuracy. These choices are exposed to the user for full control,
+however, if left unspecified the package will choose a reasonable default depending on context.
 
-For example, if you know you are dealing with highly collinear data, with unregularized OLS model, you may want to 
-explicitly set `solve_method="svd"` so that the minimum norm solution is obtained. 
+For example, if you know you are dealing with highly collinear data, with unregularized OLS model, you may want to
+explicitly set `solve_method="svd"` so that the minimum norm solution is obtained.
 
 Benchmark
 ------------
@@ -208,7 +208,7 @@ This benchmark was run on randomly generated data with [pyperf](https://github.c
 
 - Numpy's `lstsq` (uses divide-and-conquer SVD) is already a highly optimized call into LAPACK and so the scope for speed-up is relatively limited,
 and the same applies to simple approaches like directly solving normal equations with Cholesky.
-- However, even in such problems `polars-ols` Rust implementations for matching numerical algorithms tend to outperform by ~2-3x 
+- However, even in such problems `polars-ols` Rust implementations for matching numerical algorithms tend to outperform by ~2-3x
 - More substantial speed-up is achieved for the more complex models by working entirely in rust
 and avoiding overhead from back and forth into python.
 - Expect a large additional relative order-of-magnitude speed up to your workflow if it involved repeated re-estimation of models in

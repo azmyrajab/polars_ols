@@ -13,7 +13,7 @@ pyo3-polars = { version = "*", features = ["derive"] }
 serde = { version = "*", features = ["derive"] }
 polars = { version = "*", features = ["performant", "lazy", "ndarray", "dtype-struct"]}
 ndarray-rand = {version = "*"}
-faer = {version = "*"}
+faer = {version = "*", features = ["std", "rayon", "nightly"]}
 faer-ext = {version = "*", features = ["ndarray"]}
 num-traits = { version = "*" }
 approx = {version = "*" }
@@ -23,7 +23,7 @@ jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 ndarray = { version = "*", features = ["blas"]}
-ndarray-linalg = {version = "*"}
+ndarray-linalg = {version = "*", features = ["openblas"]}
 
 # Note: BLAS is only supported by default for macOS because it is difficult for this package
 # to detect it and handle system dependencies across all other operating systems and platforms easily.
@@ -36,7 +36,7 @@ ndarray-linalg = {version = "*"}
 # e.g. by adding 'openblas-src = {version = "*", features = ["system"]}'.
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 ndarray = { version = "*", features = ["matrixmultiply-threading"]}
-ndarray-linalg = {version = "*"}
+ndarray-linalg = {version = "*", features = ["netlib-static"]}
 
 [profile.dev.package.faer]
 opt-level = 3
