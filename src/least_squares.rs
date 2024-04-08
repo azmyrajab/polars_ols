@@ -1,9 +1,11 @@
+use std::str::FromStr;
+
 use faer::linalg::solvers::SolverCore;
-use faer::prelude::{SpSolver, SpSolverLstsq};
+use faer::prelude::*;
 use faer::Side;
 use faer_ext::{IntoFaer, IntoNdarray};
 use ndarray::{array, s, Array, Array1, Array2, ArrayView1, Axis, NewAxis};
-// use ndarray_linalg::{Inverse, InverseC, Norm, SolveC};
+use ndarray_linalg::LeastSquaresSvd;
 
 /// Invert square matrix input using either Cholesky or LU decomposition
 pub fn inv(array: &Array2<f32>, use_cholesky: bool) -> Array2<f32> {
@@ -18,7 +20,7 @@ pub fn inv(array: &Array2<f32>, use_cholesky: bool) -> Array2<f32> {
             }
         }
     }
-    // Fall back to LU decomposition
+    // fall back to LU decomposition
     m.partial_piv_lu()
         .inverse()
         .as_ref()
@@ -26,23 +28,75 @@ pub fn inv(array: &Array2<f32>, use_cholesky: bool) -> Array2<f32> {
         .to_owned()
 }
 
-/// Solves an ordinary least squares problem using QR using faer
-/// Inputs: features (2d ndarray), targets (1d ndarray)
+#[derive(PartialEq)]
+pub enum SolveMethod {
+    QR,
+    SVD,
+    Cholesky,
+    LU,
+    CD, // coordinate-descent for elastic net problem
+}
+
+impl FromStr for SolveMethod {
+    type Err = ();
+
+    fn from_str(input: &str) -> Result<SolveMethod, Self::Err> {
+        match input {
+            "qr" => Ok(SolveMethod::QR),
+            "svd" => Ok(SolveMethod::SVD),
+            "chol" => Ok(SolveMethod::Cholesky),
+            "lu" => Ok(SolveMethod::LU),
+            "cd" => Ok(SolveMethod::CD),
+            _ => Err(()),
+        }
+    }
+}
+
+/// Solves an ordinary least squares problem using either QR (faer) or LAPACK SVD
+/// Inputs: features (2d ndarray), targets (1d ndarray), and an optional enum denoting solve method
 /// Outputs: 1-d OLS coefficients
-pub fn solve_ols_qr(y: &Array1<f32>, x: &Array2<f32>) -> Array1<f32> {
-    // compute least squares solution via QR
-    let x_faer = x.view().into_faer();
-    let y_faer = y.slice(s![.., NewAxis]).into_faer();
-    let coefficients = x_faer.qr().solve_lstsq(&y_faer);
-    coefficients
-        .as_ref()
-        .into_ndarray()
-        .slice(s![.., 0])
-        .to_owned()
+pub fn solve_ols(
+    y: &Array1<f32>,
+    x: &Array2<f32>,
+    solve_method: Option<SolveMethod>,
+) -> Array1<f32> {
+    let n_features = x.len_of(Axis(1));
+    let n_samples = x.len_of(Axis(0));
+
+    let solve_method = match solve_method {
+        Some(SolveMethod::QR) => SolveMethod::QR,
+        Some(SolveMethod::SVD) => SolveMethod::SVD,
+        None => {
+            // automatically determine recommended solution method based on shape of data
+            if n_samples > n_features {
+                SolveMethod::QR
+            } else {
+                SolveMethod::SVD
+            }
+        }
+        _ => panic!("Only 'QR' and 'SVD' are currently supported solve methods for OLS."),
+    };
+
+    if solve_method == SolveMethod::QR {
+        // compute least squares solution via QR
+        let x_faer = x.view().into_faer();
+        let y_faer = y.slice(s![.., NewAxis]).into_faer();
+        let coefficients = x_faer.col_piv_qr().solve_lstsq(&y_faer);
+        coefficients
+            .as_ref()
+            .into_ndarray()
+            .slice(s![.., 0])
+            .to_owned()
+    } else {
+        // compute least squares via LAPACK (SVD)
+        x.least_squares(y)
+            .expect("failed to compute least squares solution")
+            .solution
+    }
 }
 
 /// Solves the normal equations: (X^T X) coefficients = X^T Y
-/// Attempts to solve via cholesky
+/// Attempts to solve with either Cholesky or LU (partial pivoting)
 fn solve_normal_equations(xtx: &Array2<f32>, xty: &Array1<f32>, use_cholesky: bool) -> Array1<f32> {
     // Attempt to solve via Cholesky decomposition
     let xtx_faer = xtx.view().into_faer();
@@ -63,7 +117,7 @@ fn solve_normal_equations(xtx: &Array2<f32>, xty: &Array1<f32>, use_cholesky: bo
             }
         }
     }
-    // Fall back to LU decomposition
+    // Fall back to LU decomposition w/ partial pivoting
     xtx_faer
         .partial_piv_lu()
         .solve(&xty.slice(s![.., NewAxis]).into_faer())
@@ -73,16 +127,82 @@ fn solve_normal_equations(xtx: &Array2<f32>, xty: &Array1<f32>, use_cholesky: bo
         .into_owned()
 }
 
+/// Solves ridge regression using Singular Value Decomposition (SVD).
+///
+/// # Arguments
+///
+/// * `y` - Target vector.
+/// * `x` - Feature matrix.
+/// * `alpha` - Ridge parameter.
+/// * `rcond` - Relative condition number used to determine cutoff for small singular values.
+///
+/// # Returns
+///
+/// * Result of ridge regression as a 1-dimensional array.
+fn solve_ridge_svd(
+    y: &Array1<f32>,
+    x: &Array2<f32>,
+    alpha: f32,
+    rcond: Option<f32>,
+) -> Array1<f32> {
+    let x_faer = x.view().into_faer();
+    let y_faer = y.view().insert_axis(Axis(1)).into_faer();
+
+    // compute SVD and extract u, s, vt
+    let svd = x_faer.thin_svd();
+    let u = svd.u();
+    let vt = svd.v().into_ndarray();
+    let s = svd.s_diagonal();
+
+    // convert s into ndarray
+    let norm_max = s.norm_max();
+    let s: Array1<f32> = s.as_2d().into_ndarray().slice(s![.., 0]).into_owned();
+
+    // set singular values less than or equal to ``rcond * largest_singular_value`` to zero.
+    let cutoff = rcond.unwrap_or(1.0e-15) * norm_max;
+    let s = s.map(|v| if v < &cutoff { 0. } else { *v });
+
+    let binding = u.transpose() * y_faer;
+    let u_t_y: Array1<f32> = binding
+        .as_ref()
+        .into_ndarray()
+        .slice(s![.., 0])
+        .into_owned();
+
+    let d = &s / (&s * &s + alpha);
+    let d_ut_y = &d * &u_t_y;
+    vt.t().dot(&d_ut_y)
+}
+
 /// Solves a ridge regression problem of the form: ||y - x B|| + alpha * ||B||
 /// Inputs: features (2d ndarray), targets (1d ndarray), ridge alpha scalar
-pub fn solve_ridge(y: &Array1<f32>, x: &Array2<f32>, alpha: f32) -> Array1<f32> {
-    assert!(alpha > 0., "alpha must be strictly positive");
-    let x_t = &x.t();
-    let x_t_x = x_t.dot(x);
-    let x_t_y = x_t.dot(y);
-    let eye = Array::eye(x_t_x.shape()[0]);
-    let ridge_matrix = &x_t_x + &eye * alpha;
-    solve_normal_equations(&ridge_matrix, &x_t_y, true)
+pub fn solve_ridge(
+    y: &Array1<f32>,
+    x: &Array2<f32>,
+    alpha: f32,
+    solve_method: Option<SolveMethod>,
+) -> Array1<f32> {
+    assert!(alpha >= 0., "alpha must be non-negative");
+    match solve_method {
+        Some(SolveMethod::Cholesky) | Some(SolveMethod::LU) | None => {
+            let x_t = &x.t();
+            let x_t_x = x_t.dot(x);
+            let x_t_y = x_t.dot(y);
+            let eye = Array::eye(x_t_x.shape()[0]);
+            let ridge_matrix = &x_t_x + &eye * alpha;
+            // use cholesky if solve_method is either None or cholesky, and otherwise LU.
+            solve_normal_equations(
+                &ridge_matrix,
+                &x_t_y,
+                solve_method == Some(SolveMethod::Cholesky),
+            )
+        }
+        Some(SolveMethod::SVD) => solve_ridge_svd(y, x, alpha, None),
+        _ => panic!(
+            "Only 'Cholesky', 'LU', & 'SVD' are currently supported solver \
+        methods for Ridge."
+        ),
+    }
 }
 
 fn soft_threshold(x: &f32, alpha: f32, positive: bool) -> f32 {
@@ -97,6 +217,7 @@ fn soft_threshold(x: &f32, alpha: f32, positive: bool) -> f32 {
 /// + alpha * l1_ratio * ||w||_1 + 0.5 * alpha * (1 - l1_ratio) * ||w||_2.
 /// Uses cyclic coordinate descent with efficient 'naive updates' and a
 /// general soft thresholding function.
+#[allow(clippy::too_many_arguments)]
 pub fn solve_elastic_net(
     y: &Array1<f32>,
     x: &Array2<f32>,
@@ -105,12 +226,21 @@ pub fn solve_elastic_net(
     max_iter: Option<usize>,
     tol: Option<f32>,       // controls convergence criteria between iterations
     positive: Option<bool>, // enforces non-negativity constraint
+    solve_method: Option<SolveMethod>,
 ) -> Array1<f32> {
     let l1_ratio = l1_ratio.unwrap_or(0.5);
     let max_iter = max_iter.unwrap_or(1_000);
-    let tol = tol.unwrap_or(0.0001);
+    let tol = tol.unwrap_or(0.00001);
     let positive = positive.unwrap_or(false);
 
+    match solve_method {
+        Some(SolveMethod::CD) => {}
+        None => {}
+        _ => panic!(
+            "Only solve_method 'CD' (coordinate descent) is currently supported \
+        for Elastic Net / Lasso problems."
+        ),
+    }
     assert!(alpha > 0., "'alpha' must be strictly positive");
     assert!(
         (0. ..=1.).contains(&l1_ratio),

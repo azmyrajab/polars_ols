@@ -55,7 +55,7 @@ df = pl.DataFrame({"y": [1.16, -2.16, -1.57, 0.21, 0.22, 1.6, -2.11, -2.92, -0.8
                    })
 
 lasso_expr = pl.col("y").least_squares.lasso(pl.col("x1"), pl.col("x2"), alpha=0.0001, add_intercept=True).over("group")
-wls_expr = pls.least_squares_from_formula("y ~ x1 + x2 -1", sample_weights=pl.col("weights"))
+wls_expr = pls.compute_least_squares_from_formula("y ~ x1 + x2 -1", sample_weights=pl.col("weights"))
 
 predictions = df.with_columns(lasso_expr.round(2).alias("predictions_lasso"),
                               wls_expr.round(2).alias("predictions_wls"))
@@ -162,6 +162,16 @@ As well as efficient implementations of moving window models:
 An arbitrary combination of sample_weights, L1/L2 penalties, and non-negativity constraints can be specified with
 the ```least_squares.from_formula``` and ```least_squares.least_squares``` entry-points.
 
+Solve Methods
+------------
+
+`polars-ols` provides a choice over multiple supported numerical approaches per model (via `solve_method` flag), 
+with implications on performance vs numerical accuracy. These choices are exposed to the user for full control, 
+however, if left unspecified the package will choose a reasonable default depending on context. 
+
+For example, if you know you are dealing with highly collinear data, with unregularized OLS model, you may want to 
+explicitly set `solve_method="svd"` so that the minimum norm solution is obtained. 
+
 Benchmark
 ------------
 The usual caveats of benchmarks apply here, but the below should still be indicative of the
@@ -173,31 +183,35 @@ This benchmark was run on randomly generated data with [pyperf](https://github.c
 <a id="bennchmark"></a>
 
 ### n_samples=2_000, n_features=5
-
-| Model                   | polars_ols       | Python Benchmark  | Benchmark Type | Speed-up vs Python Benchmark |
-|-------------------------|------------------|-------------------|----------------|------------------------------|
-| Least Squares           | 283 ± 4 us       | 509 ± 313 us      | Numpy          | 1.8x                         |
-| Ridge                   | 262 ± 3 us       | 369 ± 231 us      | Numpy          | 1.4x                         |
-| Weighted Least Squares  | 493 ± 7 us       | 2.13 ms ± 0.22 ms | Statsmodels    | 4.3x                         |
-| Elastic Net             | 326 ± 3 us       | 87.3 ms ± 9.0 ms  | Sklearn        | 268.2x                       |
-| Recursive Least Squares | 1.39 ms ± 0.01 ms| 18.7 ms ± 1.4 ms  | Statsmodels    | 13.5x                        |
-| Rolling Least Squares   | 2.72 ms ± 0.03 ms| 22.3 ms ± 0.2 ms  | Statsmodels    | 8.2x                         |
+| Model                   | polars_ols         | Python Benchmark          | Benchmark Type        | Speed-up vs Python Benchmark |
+|-------------------------|--------------------|---------------------------|-----------------------|------------------------------|
+| Least Squares (QR)      | 300 us ± 7 us      | 1.01 ms ± 0.81 ms         | Numpy (QR)            | 3.4x                         |
+| Least Squares (SVD)     | 351 us ± 4 us      | 853 us ± 417 us           | Numpy (SVD)           | 2.4x                         |
+| Ridge (Cholesky)        | 279 us ± 6 us      | 1.63 ms ± 0.69 ms         | Sklearn (Cholesky)    | 5.8x                         |
+| Ridge (SVD)             | 351 us ± 5 us      | 1.95 ms ± 1.12 ms         | Sklearn (SVD)         | 5.6x                         |
+| Weighted Least Squares  | 531 us ± 4 us      | 2.54 ms ± 0.40 ms         | Statsmodels           | 4.8x                         |
+| Elastic Net (CD)        | 339 us ± 5 us      | 2.17 ms ± 0.77 ms         | Sklearn               | 6.4x                         |
+| Recursive Least Squares | 1.42 ms ± 0.02 ms | 18.5 ms ± 1.4 ms          | Statsmodels           | 13.0x                        |
+| Rolling Least Squares   | 2.78 ms ± 0.07 ms | 22.8 ms ± 0.2 ms          | Statsmodels           | 8.2x                         |
 
 ### n_samples=10_000, n_features=100
-| Model                   | polars_ols       | Python Benchmark    | Benchmark Type | Speed-up vs Python Benchmark |
-|-------------------------|------------------|---------------------|----------------|------------------------------|
-| Least Squares           | 15.6 ms ± 0.2 ms| 29.9 ms ± 8.6 ms    | Numpy          | 1.9x                         |
-| Ridge                   | 5.81 ms ± 0.05 ms| 5.21 ms ± 0.94 ms   | Numpy          | 0.9x                         |
-| Weighted Least Squares  | 16.8 ms ± 0.2 ms| 82.4 ms ± 9.1 ms    | Statsmodels    | 4.9x                         |
-| Elastic Net             | 20.9 ms ± 0.3 ms| 134 ms ± 21 ms      | Sklearn        | 6.4x                         |
-| Recursive Least Squares | 163 ms ± 28 ms  | 65.7 sec ± 28.2 sec | Statsmodels    | 403.1x                       |
-| Rolling Least Squares   | 390 ms ± 10 ms  | 3.99 sec ± 0.54 sec | Statsmodels    | 10.2x                        |
+| Model                   | polars_ols         | Python Benchmark      | Benchmark Type   | Speed-up vs Python Benchmark |
+|-------------------------|--------------------|-----------------------|------------------|------------------------------|
+| Least Squares (QR)      | 12.4 ms ± 0.2 ms   | 68.3 ms ± 13.7 ms     | Numpy (QR)       | 5.5x                         |
+| Least Squares (SVD)     | 14.5 ms ± 0.5 ms   | 44.9 ms ± 10.3 ms     | Numpy (SVD)      | 3.1x                         |
+| Ridge (Cholesky)        | 6.10 ms ± 0.14 ms  | 9.91 ms ± 2.86 ms     | Sklearn (Cholesky) | 1.6x                       |
+| Ridge (SVD)             | 24.9 ms ± 2.1 ms   | 390 ms ± 63 ms        | Sklearn (SVD)    | 15.7x                        |
+| Weighted Least Squares  | 14.8 ms ± 2.4 ms   | 114 ms ± 35 ms        | Statsmodels      | 7.7x                         |
+| Elastic Net (CD)        | 21.7 ms ± 1.2 ms   | 111 ms ± 54 ms        | Sklearn          | 5.1x                         |
+| Recursive Least Squares | 163 ms ± 28 ms     | 65.7 sec ± 28.2 sec   | Statsmodels      | 403.1x                       |
+| Rolling Least Squares   | 390 ms ± 10 ms     | 3.99 sec ± 0.54 sec   | Statsmodels      | 10.2x                        |
 
-Numpy's `lstsq` is already a highly optimized call into LAPACK and so the scope for speed-up is limited.
-However, we can achieve substantial speed-ups for the more complex models by working entirely in rust
+- Numpy's `lstsq` (uses divide-and-conquer SVD) is already a highly optimized call into LAPACK and so the scope for speed-up is relatively limited,
+and the same applies to simple approaches like directly solving normal equations with Cholesky.
+- However, even in such problems `polars-ols` Rust implementations for matching numerical algorithms tend to outperform by ~2-3x 
+- More substantial speed-up is achieved for the more complex models by working entirely in rust
 and avoiding overhead from back and forth into python.
-
-Expect an additional relative order-of-magnitude speed up to your workflow if it involved repeated re-estimation of models in
+- Expect a large additional relative order-of-magnitude speed up to your workflow if it involved repeated re-estimation of models in
 (python) loops.
 
 
@@ -211,5 +225,4 @@ Credits & Related Projects
 Future Work / TODOs
 ------------
 - Support generic types, in rust implementations, so that both f32 and f64 types are recognized. Right now data is cast to f32 prior to estimation
-- Handle nulls more clearly
 - Add more detailed documentation on supported models, signatures, and API

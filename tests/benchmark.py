@@ -1,12 +1,14 @@
 import numpy as np
 import polars as pl
 import pyperf
+import scipy
 import statsmodels.formula.api as smf
-from sklearn.linear_model import ElasticNet
+from sklearn.linear_model import ElasticNet, Ridge
 from statsmodels.regression.recursive_ls import RecursiveLS
 from statsmodels.regression.rolling import RollingOLS
 
 import polars_ols as pls  # import package to register the .least_squares namespace
+from polars_ols.least_squares import SolveMethod
 
 
 def _make_data(n_samples: int = 2_000, n_features: int = 5) -> pl.DataFrame:
@@ -17,30 +19,44 @@ def _make_data(n_samples: int = 2_000, n_features: int = 5) -> pl.DataFrame:
     )
 
 
-def benchmark_least_squares(data: pl.DataFrame):
+def benchmark_least_squares(data: pl.DataFrame, solve_method: SolveMethod = "qr"):
     return (
         data.lazy()
         .with_columns(
             pl.col("y")
-            .least_squares.ols(*[pl.col(c) for c in data.columns if c != "y"])
+            .least_squares.ols(
+                *[pl.col(c) for c in data.columns if c != "y"], solve_method=solve_method
+            )
             .alias("predictions")
         )
         .collect()
     )
 
 
-def benchmark_least_squares_numpy(data: pl.DataFrame):
+def benchmark_least_squares_numpy_svd(data: pl.DataFrame):
     y, x = data.select("y").to_numpy().flatten(), data.select(pl.all().exclude("y")).to_numpy()
     coef = np.linalg.lstsq(x, y, rcond=None)[0]
     return data.lazy().with_columns(predictions=pl.lit(x @ coef).alias("predictions")).collect()
 
 
-def benchmark_ridge(data: pl.DataFrame):
+def benchmark_least_squares_numpy_qr(data: pl.DataFrame):
+    y, x = data.select("y").to_numpy().flatten(), data.select(pl.all().exclude("y")).to_numpy()
+    q, r = np.linalg.qr(x)
+    # make use of the fact that r is upper triangular --> use back substitution (solve_triangular)
+    coef = scipy.linalg.solve_triangular(r, q.T @ y, check_finite=False)
+    return data.lazy().with_columns(predictions=pl.lit(x @ coef).alias("predictions")).collect()
+
+
+def benchmark_ridge(data: pl.DataFrame, solve_method: SolveMethod = "chol"):
     return (
         data.lazy()
         .with_columns(
             pl.col("y")
-            .least_squares.ridge(*[pl.col(c) for c in data.columns if c != "y"], alpha=0.0001)
+            .least_squares.ridge(
+                *[pl.col(c) for c in data.columns if c != "y"],
+                alpha=0.0001,
+                solve_method=solve_method,
+            )
             .alias("predictions")
         )
         .collect()
@@ -52,8 +68,17 @@ def benchmark_ridge_numpy(data: pl.DataFrame):
     y, x = data.select("y").to_numpy().flatten(), data.select(pl.all().exclude("y")).to_numpy()
     xtx = x.T @ x + np.eye(x.shape[1]) * alpha
     xty = x.T @ y
-    coef = np.linalg.solve(xtx, xty)
+    coef = np.linalg.solve(xtx, xty)  # this is similar to Ridge(solve_method="cholesky")
     return data.lazy().with_columns(predictions=pl.lit(x @ coef).alias("predictions")).collect()
+
+
+def benchmark_ridge_sklearn(data: pl.DataFrame, solve_method: str = "cholesky"):
+    alpha: float = 0.0001
+    y, x = data.select("y").to_numpy().flatten(), data.select(pl.all().exclude("y")).to_numpy()
+    mdl = Ridge(fit_intercept=False, alpha=alpha, solver=solve_method).fit(x, y)
+    return (
+        data.lazy().with_columns(predictions=pl.lit(x @ mdl.coef_).alias("predictions")).collect()
+    )
 
 
 def benchmark_wls_from_formula(data: pl.DataFrame):
@@ -92,8 +117,9 @@ def benchmark_elastic_net(data: pl.DataFrame):
             pl.col("y").least_squares.elastic_net(
                 *[pl.col(c) for c in data.columns if c != "y"],
                 alpha=0.1,
-                l1_ratio=0.5,
-                max_iter=1_000,
+                l1_ratio=0.5,  # same as sklearn default setting
+                max_iter=1_000,  # same as sklearn default setting
+                tol=1.0e-4,  # same as sklearn default setting
             )
         )
         .collect()
@@ -155,17 +181,21 @@ def benchmark_recursive_least_squares_statsmodels(data: pl.DataFrame):
 if __name__ == "__main__":
     # example: python tests/benchmark.py --quiet --fast
     # we run the benchmarks in python (as opposed to rust) so that overhead of pyO3 is included
-    df = _make_data(n_features=100, n_samples=10_000)
+    df = _make_data(n_features=5, n_samples=2_000)
     runner = pyperf.Runner()
-    runner.bench_func("benchmark_least_squares", benchmark_least_squares, df)
-    runner.bench_func("benchmark_ridge", benchmark_ridge, df)
+    runner.bench_func("benchmark_least_squares_qr", benchmark_least_squares, df, "qr")
+    runner.bench_func("benchmark_least_squares_svd", benchmark_least_squares, df, "svd")
+    runner.bench_func("benchmark_ridge_cholesky", benchmark_ridge, df, "chol")
+    runner.bench_func("benchmark_ridge_svd", benchmark_ridge, df, "svd")
     runner.bench_func("benchmark_wls_from_formula", benchmark_wls_from_formula, df)
     runner.bench_func("benchmark_elastic_net", benchmark_elastic_net, df)
     runner.bench_func("benchmark_recursive_least_squares", benchmark_recursive_least_squares, df)
     runner.bench_func("benchmark_rolling_least_squares", benchmark_rolling_least_squares, df)
 
-    # runner.bench_func("benchmark_least_squares_numpy", benchmark_least_squares_numpy, df)
-    # runner.bench_func("benchmark_ridge_numpy", benchmark_ridge_numpy, df)
+    # runner.bench_func("benchmark_least_squares_numpy_qr", benchmark_least_squares_numpy_qr, df)
+    # runner.bench_func("benchmark_least_squares_numpy_svd", benchmark_least_squares_numpy_svd, df)
+    # runner.bench_func("benchmark_ridge_sklearn_cholesky", benchmark_ridge_sklearn, df, "cholesky")
+    # runner.bench_func("benchmark_ridge_sklearn_svd", benchmark_ridge_sklearn, df, "svd")
     # runner.bench_func(
     #     "benchmark_wls_from_formula_statsmodels", benchmark_wls_from_formula_statsmodels, df
     # )

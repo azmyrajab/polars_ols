@@ -9,9 +9,9 @@ from polars_ols.least_squares import (
     RLSKwargs,
     RollingKwargs,
     compute_least_squares,
+    compute_least_squares_from_formula,
     compute_recursive_least_squares,
     compute_rolling_least_squares,
-    least_squares_from_formula,
     predict,
 )
 from polars_ols.utils import build_expressions_from_patsy_formula
@@ -21,7 +21,7 @@ __all__ = [
     "compute_recursive_least_squares",
     "compute_rolling_least_squares",
     "LeastSquares",
-    "least_squares_from_formula",
+    "compute_least_squares_from_formula",
 ]
 
 
@@ -45,8 +45,7 @@ class LeastSquares:
             sample_weights=sample_weights,
             add_intercept=add_intercept,
             mode=mode,
-            null_policy=null_policy,
-            ols_kwargs=OLSKwargs(**ols_kwargs),
+            ols_kwargs=OLSKwargs(null_policy=null_policy, **ols_kwargs),
         )
 
     def ols(self, *features: pl.Expr, **kwargs) -> pl.Expr:
@@ -79,8 +78,7 @@ class LeastSquares:
             sample_weights=sample_weights,
             add_intercept=add_intercept,
             mode=mode,
-            null_policy=null_policy,
-            rls_kwargs=RLSKwargs(**rls_kwargs),
+            rls_kwargs=RLSKwargs(null_policy=null_policy, **rls_kwargs),
         )
 
     def rolling_ols(
@@ -98,8 +96,7 @@ class LeastSquares:
             sample_weights=sample_weights,
             add_intercept=add_intercept,
             mode=mode,
-            null_policy=null_policy,
-            rolling_kwargs=RollingKwargs(**rolling_kwargs),
+            rolling_kwargs=RollingKwargs(null_policy=null_policy, **rolling_kwargs),
         )
 
     def expanding_ols(self, *features: pl.Expr, **kwargs):

@@ -8,7 +8,12 @@ import statsmodels.formula.api as smf
 from sklearn.linear_model import ElasticNet
 from statsmodels.regression.rolling import RollingOLS
 
-from polars_ols import OLSKwargs, compute_least_squares, least_squares_from_formula
+from polars_ols import (
+    OLSKwargs,
+    compute_least_squares,
+    compute_least_squares_from_formula,
+)
+from polars_ols.least_squares import SolveMethod
 
 
 @contextmanager
@@ -16,36 +21,46 @@ def timer(msg: str | None = None, precision: int = 3) -> float:
     start = time.perf_counter()
     end = start
     yield lambda: end - start
-    msg = f"{msg or 'Took'}: {time.perf_counter() - start:.{precision}f} seconds"
+    msg = f"{msg or 'Took'}: {(time.perf_counter() - start) * 1_000:.{precision}f} ms"
     print(msg)
     end = time.perf_counter()
 
 
-def _make_data(n: int = 10_000, n_groups: int | None = None):
+def _make_data(
+    n_samples: int = 10_000,
+    n_features: int = 2,
+    n_groups: int | None = None,
+    scale: float = 0.1,
+) -> pl.DataFrame:
     rng = np.random.default_rng(0)
-    array = rng.normal(size=(n, 2))
-    data = {
-        "y": array.sum(axis=1) + rng.normal(size=n, scale=0.1),
-        "x1": array[:, 0],
-        "x2": array[:, 1],
-    }
+    x = rng.normal(size=(n_samples, n_features))
+    eps = rng.normal(size=n_samples, scale=scale)
+
+    df = pl.DataFrame(data=x, schema=[f"x{i + 1}" for i in range(n_features)]).with_columns(
+        y=pl.lit(x.sum(1) + eps)
+    )
+
     if n_groups is not None:
-        data |= {"group": rng.integers(n_groups, size=n)}
-    return pl.DataFrame(data).with_columns(pl.col(pl.FLOAT_DTYPES).cast(pl.Float32))
+        df = df.with_columns(group=pl.lit(rng.integers(n_groups, size=n_samples)))
+
+    return df.with_columns(pl.col(pl.FLOAT_DTYPES).cast(pl.Float32))
 
 
-def test_ols():
+@pytest.mark.parametrize("solve_method", ("qr", "svd", "chol", "lu", None))
+def test_ols(solve_method: SolveMethod):
     df = _make_data()
-    # compute OLS solution w/ polars (via QR in rust) [2.331s]
-    with timer("OLS rust"):
+    # compute OLS w/ polars-ols
+    with timer(f"\nOLS {solve_method}", precision=5):
         for _ in range(1_000):
-            expr = compute_least_squares(pl.col("y"), pl.col("x1"), pl.col("x2")).alias(
-                "predictions"
-            )
+            expr = compute_least_squares(
+                pl.col("y"),
+                pl.col("x1"),
+                pl.col("x2"),
+                ols_kwargs=OLSKwargs(solve_method=solve_method),
+            ).alias("predictions")
             df = df.lazy().with_columns(expr).collect()
-
-    # compute OLS w/ lstsq numpy [4.583s]
-    with timer("OLS numpy"):
+    # compute OLS w/ lstsq numpy
+    with timer("OLS numpy", precision=5):
         for _ in range(1_000):
             x, y = df.select("x1", "x2").to_numpy(), df.select("y").to_numpy().flatten()
             coef = np.linalg.lstsq(x, y, rcond=None)[0]
@@ -54,7 +69,7 @@ def test_ols():
     assert np.allclose(df["predictions"], df["predictions2"], atol=1.0e-4, rtol=1.0e-4)
 
 
-def test_fit_missing_data():
+def test_fit_missing_data_coefficients():
     df = _make_data()
     rng = np.random.default_rng(0)
 
@@ -65,24 +80,199 @@ def test_fit_missing_data():
         *(pl.col(c).map_elements(insert_nulls, return_dtype=pl.Float32) for c in df.columns)
     )
 
+    # in presence of unhandled nulls assert the rust library raises ComputeError
     with pytest.raises(pl.exceptions.ComputeError):
-        df.select(pl.col("y").least_squares.ols(pl.col("x1"), pl.col("x2"), null_policy="ignore"))
+        df.select(
+            pl.col("y").least_squares.ols(
+                pl.col("x1"), pl.col("x2"), null_policy="ignore", mode="coefficients"
+            )
+        )
 
-    # test zero policy is sane
+    # test rust zero policy is sane
     assert np.allclose(
-        df.select(pl.col("y").least_squares.ols(pl.col("x1"), pl.col("x2"), null_policy="zero")),
-        df.fill_null(0.0).select(
-            pl.col("y").least_squares.ols(pl.col("x1"), pl.col("x2"), null_policy="ignore")
-        ),
+        df.select(
+            pl.col("y").least_squares.ols(
+                pl.col("x1"), pl.col("x2"), null_policy="zero", mode="coefficients"
+            )
+        ).unnest("coefficients"),
+        df.fill_null(0.0)
+        .select(
+            pl.col("y").least_squares.ols(
+                pl.col("x1"), pl.col("x2"), null_policy="ignore", mode="coefficients"
+            )
+        )
+        .unnest("coefficients"),
     )
 
-    # test drop policy is sane
+    # test rust drop (any) policy is sane
     assert np.allclose(
-        df.select(pl.col("y").least_squares.ols(pl.col("x1"), pl.col("x2"), null_policy="drop")),
-        df.drop_nulls().select(
-            pl.col("y").least_squares.ols(pl.col("x1"), pl.col("x2"), null_policy="ignore")
-        ),
+        df.select(
+            pl.col("y").least_squares.ols(
+                pl.col("x1"), pl.col("x2"), null_policy="drop", mode="coefficients"
+            )
+        ).unnest("coefficients"),
+        df.drop_nulls()
+        .select(
+            pl.col("y").least_squares.ols(
+                pl.col("x1"), pl.col("x2"), null_policy="ignore", mode="coefficients"
+            )
+        )
+        .unnest("coefficients"),
     )
+
+    # test rust drop_y_zero_x policy is sane
+    assert np.allclose(
+        df.select(
+            pl.col("y").least_squares.ols(
+                pl.col("x1"), pl.col("x2"), null_policy="drop_y_zero_x", mode="coefficients"
+            )
+        ).unnest("coefficients"),
+        df.drop_nulls(subset=["y"])
+        .fill_null(0.0)
+        .select(
+            pl.col("y").least_squares.ols(
+                pl.col("x1"), pl.col("x2"), null_policy="ignore", mode="coefficients"
+            )
+        )
+        .unnest("coefficients"),
+    )
+
+
+def test_fit_missing_data_predictions_and_residuals():
+    df = _make_data()
+    rng = np.random.default_rng(0)
+
+    def insert_nulls(val):
+        return None if rng.random() < 0.1 else val
+
+    df = df.with_columns(
+        *(pl.col(c).map_elements(insert_nulls, return_dtype=pl.Float32) for c in df.columns)
+    )
+
+    # check predictions logic
+    with timer("numpy lstsq w/ manual nan policy", precision=5):
+        # compute desired behaviour for "drop" in numpy:
+        x, y = (
+            df.select("x1", "x2").to_numpy(),
+            df.select("y").to_numpy().flatten(),
+        )  # notice implicit null -> nan converting to numpy
+
+        # 1) compute mask, drop invalid rows, compute coefficients
+        is_valid = ~np.isnan(x).any(axis=1) & ~np.isnan(y)
+        x_fit, y_fit = x[is_valid, :], y[is_valid]
+        coef = np.linalg.lstsq(x_fit, y_fit, rcond=None)[0]
+
+        # in order to broadcast (valid) predictions to the dimensions of original data; we must
+        # use the original (un-dropped) x. most reasonable behaviour for linear models is:
+        # a) always produce predictions, even for cases where target was null
+        # (allows extrapolation) &
+        # b) for residuals, by default, one wants to retain nulls of targets
+        # Thus the logic below:
+        is_nan_x = np.isnan(x)
+        x_predict = x.copy()
+        x_predict[is_nan_x] = 0.0  # fill x nans with zero
+        predictions_expected = x_predict @ coef
+    with timer("polars-ols w/ null_policy", precision=5):
+        predictions = df.select(
+            predictions=pl.col("y").least_squares.ols(
+                pl.col("x1"), pl.col("x2"), null_policy="drop", mode="predictions"
+            )
+        )
+    assert np.allclose(
+        predictions.to_numpy().flatten(), predictions_expected.flatten(), rtol=1.0e-6, atol=1.0e-6
+    )
+
+    # check residuals logic
+    residuals_expected = y - predictions_expected  # no need to copy y
+    residuals = df.select(
+        residuals=pl.col("y").least_squares.ols(
+            pl.col("x1"), pl.col("x2"), null_policy="drop", mode="residuals"
+        )
+    )
+    assert np.allclose(
+        residuals.to_numpy().flatten(), residuals_expected, rtol=1.0e-6, atol=1.0e-6, equal_nan=True
+    )
+
+
+@pytest.mark.parametrize("n_features", (2, 10, 100, 1_000))
+def test_fit_wide(n_features: int):
+    df = _make_data(n_samples=10, n_features=n_features, scale=1.0e-4)
+    features = [pl.col(f) for f in df.columns if f.startswith("x")]
+    df = df.with_columns(
+        # for p > k: OLS implementation will automatically use LAPACK SVD which should handle
+        # over-determined problems
+        pl.col("y").least_squares.ols(*features, mode="coefficients").alias("coef_ols"),
+        # p >> k, cholesky of X.T @ X may fail: ridge will gracefully
+        # fall back to LU with partial pivoting - which should handle over-determined problems
+        pl.col("y")
+        .least_squares.ridge(*features, mode="coefficients", alpha=1.0e-5)
+        .alias("coef_ridge"),
+        # lasso/elastic-net use coordinate-descent and so should work always
+        pl.col("y")
+        .least_squares.lasso(
+            *features, mode="coefficients", alpha=1.0e-6, tol=1.0e-8, max_iter=3_000
+        )
+        .alias("coef_lasso"),
+    )
+    c_ols = df.select(
+        pl.corr(
+            pl.col("coef_ols").least_squares.predict(*features).alias("predictions"),
+            pl.col("y"),
+        )
+    )
+    c_ridge = df.select(
+        pl.corr(
+            pl.col("coef_ridge").least_squares.predict(*features).alias("predictions"),
+            pl.col("y"),
+        )
+    )
+    c_lasso = df.select(
+        pl.corr(
+            pl.col("coef_lasso").least_squares.predict(*features).alias("predictions"),
+            pl.col("y"),
+        )
+    )
+    assert c_ols.item() == pytest.approx(1.0, rel=1.0e-5, abs=1.0e-5)
+    assert c_ridge.item() == pytest.approx(1.0, rel=1.0e-5, abs=1.0e-5)
+    assert c_lasso.item() == pytest.approx(1.0, rel=1.0e-5, abs=1.0e-5)
+
+
+@pytest.mark.parametrize(
+    "n_features, solve_method",
+    [
+        (10, "svd"),  # n < k
+        (99, "svd"),  # n = k
+        (1_000, "svd"),  # n > k
+        (90, "qr"),  # n < k
+    ],
+)
+def test_fit_multi_collinear(n_features: int, solve_method: str):
+    # note that:
+    # - only SVD solver (equivalent to lstsq) ensures minimum norm solution in case of collinearity
+    last_feature_name = f"x{n_features}"
+    multicollinear_feature_name = f"x{n_features + 1}"
+
+    df = _make_data(n_samples=100, n_features=n_features, scale=1.0e-4)
+    df = df.with_columns((pl.col(last_feature_name) + 1.0e-12).alias(multicollinear_feature_name))
+
+    features = [pl.col(f) for f in df.columns if f.startswith("x")]
+
+    coef = df.select(
+        pl.col("y").least_squares.ols(*features, mode="coefficients", solve_method=solve_method)
+    ).unnest("coefficients")
+
+    x, y = df.select(pl.all().exclude("y")).to_numpy(), df["y"].to_numpy()
+    coef_expected = np.linalg.lstsq(x, y, rcond=None)[0]
+
+    if solve_method == "svd":
+        assert np.allclose(coef, coef_expected, rtol=1.0e-5, atol=1.0e-5)
+    else:
+        coef = coef.to_numpy().flatten()
+        assert ~np.isnan(coef).any()
+        # other methods will *not* give min norm coefficients
+        assert np.linalg.norm(coef) > np.linalg.norm(coef_expected)
+        # but should not 'blow up' for QR
+        assert np.allclose(x @ coef, x @ coef_expected, rtol=1.0e-4, atol=1.0e-4)
 
 
 def test_coefficients_ols():
@@ -127,7 +317,7 @@ def test_coefficients_ols_groups():
 
 
 def test_coefficients_shape_broadcast():
-    df = _make_data(n=10_000, n_groups=10)
+    df = _make_data(n_samples=10_000, n_groups=10)
     assert df.select(
         pl.col("y")
         .least_squares.ols(pl.col("x1"), pl.col("x2"), mode="coefficients")
@@ -183,7 +373,7 @@ def test_least_squares_from_formula():
     weights /= weights.mean()
     df = _make_data().with_columns(sample_weights=pl.lit(weights)).cast(pl.Float32)
 
-    expr = least_squares_from_formula(
+    expr = compute_least_squares_from_formula(
         "y ~ x1 + x2",  # patsy includes intercept by default
         sample_weights=pl.col("sample_weights"),
     ).alias("predictions")
@@ -497,7 +687,7 @@ def test_moving_window_regressions_over():
 
 def test_predict():
     df = _make_data(n_groups=1)
-    df_test = _make_data(n=20, n_groups=1)
+    df_test = _make_data(n_samples=20, n_groups=1).drop("y")
 
     # estimate coefficients
     df_coefficients = (
@@ -523,13 +713,15 @@ def test_predict():
         )
         .collect()
         .to_numpy()
+        .flatten()
     )
 
     # compare to predictions computed as dot product of train coefficients with test data
     expected = (
         df_test.drop("group")
         .to_numpy()
-        .dot(df_coefficients.unnest("coefficients").collect().to_numpy().T)
+        .dot(df_coefficients.drop("group").unnest("coefficients").collect().to_numpy().T)
+        .flatten()
     )
     assert np.allclose(predictions, expected)
 

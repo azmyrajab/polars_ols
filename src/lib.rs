@@ -6,10 +6,10 @@ use pyo3::{pymodule, PyResult, Python};
 
 #[cfg(test)]
 mod tests {
-    use crate::expressions::convert_polars_to_ndarray;
+    use crate::expressions::{convert_polars_to_ndarray, NullPolicy};
     use crate::least_squares::{
-        inv, outer_product, solve_elastic_net, solve_ols_qr, solve_recursive_least_squares,
-        solve_ridge, solve_rolling_ols, update_xtx_inv, woodbury_update,
+        inv, outer_product, solve_elastic_net, solve_ols, solve_recursive_least_squares,
+        solve_ridge, solve_rolling_ols, update_xtx_inv, woodbury_update, SolveMethod,
     };
     use ndarray::prelude::*;
     use ndarray_linalg::assert_close_l2;
@@ -18,7 +18,8 @@ mod tests {
     use polars::datatypes::DataType::Float32;
     use polars::prelude::*;
 
-    fn make_data() -> (Series, Series, Series) {
+    fn make_data(null_policy: Option<NullPolicy>) -> (Array1<f32>, Array2<f32>) {
+        let null_policy = null_policy.unwrap_or(NullPolicy::Ignore);
         let x1 = Series::from_vec(
             "x1",
             Array::random(10_000, Normal::new(0., 1.).unwrap()).to_vec(),
@@ -32,41 +33,50 @@ mod tests {
         .cast(&Float32)
         .unwrap();
         let y = (&x1 + &x2).with_name("y");
-        (y, x1, x2)
+
+        convert_polars_to_ndarray(&[y.clone(), x1, x2], &null_policy)
     }
 
     #[test]
-    fn test_ols_qr() {
-        let (y, x1, x2) = make_data();
-        let (targets, features) = convert_polars_to_ndarray(&[y.clone(), x1, x2]);
-        let coefficients = solve_ols_qr(&targets, &features);
+    fn test_ols() {
+        let (targets, features) = make_data(None);
+        let coefficients_1 = solve_ols(&targets, &features, None);
+        let coefficients_2 = solve_ols(&targets, &features, Some(SolveMethod::SVD));
         let expected = array![1., 1.];
-        assert_close_l2!(&coefficients, &expected, 0.001);
+        assert_close_l2!(&coefficients_1, &coefficients_2, 0.001);
+        assert_close_l2!(&coefficients_1, &expected, 0.001);
     }
 
     #[test]
     fn test_ridge() {
-        let (y, x1, x2) = make_data();
-        let (targets, features) = convert_polars_to_ndarray(&[y.clone(), x1, x2]);
-        let coefficients = solve_ridge(&targets, &features, 10.0);
+        let (targets, features) = make_data(None);
+        let coefficients_1 = solve_ridge(&targets, &features, 10.0, None);
+        let coefficients_2 = solve_ridge(&targets, &features, 10.0, Some(SolveMethod::SVD));
         let expected = array![0.999, 0.999];
-        assert_close_l2!(&coefficients, &expected, 0.001);
+        assert_close_l2!(&coefficients_1, &coefficients_2, 0.001);
+        assert_close_l2!(&coefficients_1, &expected, 0.001);
     }
 
     #[test]
     fn test_elastic_net() {
-        let (y, x1, x2) = make_data();
-        let (targets, features) = convert_polars_to_ndarray(&[y.clone(), x1, x2]);
-        let coefficients =
-            solve_elastic_net(&targets, &features, 0.001, Some(0.5), None, None, None);
+        let (targets, features) = make_data(None);
+        let coefficients = solve_elastic_net(
+            &targets,
+            &features,
+            0.001,
+            Some(0.5),
+            None,
+            None,
+            None,
+            None,
+        );
         let expected = array![0.999, 0.999];
         assert_close_l2!(&coefficients, &expected, 0.001);
     }
 
     #[test]
     fn test_recursive_least_squares() {
-        let (y, x1, x2) = make_data();
-        let (targets, features) = convert_polars_to_ndarray(&[y.clone(), x1, x2]);
+        let (targets, features) = make_data(None);
         let coefficients =
             solve_recursive_least_squares(&targets, &features, Some(252.0), Some(0.01), None);
         let expected = array![1.0, 1.0];
@@ -77,8 +87,7 @@ mod tests {
 
     #[test]
     fn test_rolling_least_squares() {
-        let (y, x1, x2) = make_data();
-        let (targets, features) = convert_polars_to_ndarray(&[y.clone(), x1, x2]);
+        let (targets, features) = make_data(None);
         let coefficients = solve_rolling_ols(
             &targets,
             &features,
