@@ -1,5 +1,6 @@
 import time
 from contextlib import contextmanager
+from typing import Optional
 
 import numpy as np
 import polars as pl
@@ -17,7 +18,7 @@ from polars_ols.least_squares import SolveMethod
 
 
 @contextmanager
-def timer(msg: str | None = None, precision: int = 3) -> float:
+def timer(msg: Optional[str] = None, precision: int = 3) -> float:
     start = time.perf_counter()
     end = start
     yield lambda: end - start
@@ -29,7 +30,7 @@ def timer(msg: str | None = None, precision: int = 3) -> float:
 def _make_data(
     n_samples: int = 10_000,
     n_features: int = 2,
-    n_groups: int | None = None,
+    n_groups: Optional[int] = None,
     scale: float = 0.1,
 ) -> pl.DataFrame:
     rng = np.random.default_rng(0)

@@ -162,7 +162,7 @@ def _pre_process_data(
         if any(f.meta.output_name == "const" for f in features):
             logger.info("feature named 'const' already detected, assuming it is an intercept")
         else:
-            features.append(target.fill_null(0.0).mul(0.0).add(1.0).alias("const"))
+            features.append(target.fill_null(0.0).mul(0.0).add(1.0).alias("const").cast(pl.Float32))
     # handle sample weights
     sqrt_w = 1.0
     if sample_weights is not None:
