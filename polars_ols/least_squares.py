@@ -1,14 +1,27 @@
 from __future__ import annotations
+
 import logging
 from dataclasses import asdict, dataclass
 from functools import partial
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Set, get_args, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Set,
+    Union,
+    get_args,
+)
 
 import numpy as np
 import polars as pl
 from polars.plugins import register_plugin_function
-from polars.type_aliases import IntoExpr
+
+if TYPE_CHECKING:
+    from polars.type_aliases import IntoExpr
 
 from polars_ols.utils import build_expressions_from_patsy_formula, parse_into_expr
 
