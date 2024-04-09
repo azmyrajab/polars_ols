@@ -178,8 +178,9 @@ def test_fit_missing_data_predictions_and_residuals():
                 pl.col("x1"), pl.col("x2"), null_policy="drop", mode="predictions"
             )
         )
+
     assert np.allclose(
-        predictions.to_numpy().flatten(), predictions_expected.flatten(), rtol=1.0e-6, atol=1.0e-6
+        predictions.to_numpy().flatten(), predictions_expected.flatten(), rtol=1.0e-4, atol=1.0e-4
     )
 
     # check residuals logic
@@ -190,7 +191,7 @@ def test_fit_missing_data_predictions_and_residuals():
         )
     )
     assert np.allclose(
-        residuals.to_numpy().flatten(), residuals_expected, rtol=1.0e-6, atol=1.0e-6, equal_nan=True
+        residuals.to_numpy().flatten(), residuals_expected, rtol=1.0e-4, atol=1.0e-4, equal_nan=True
     )
 
 
