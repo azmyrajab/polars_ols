@@ -16,7 +16,6 @@ from typing import (
     get_args,
 )
 
-import numpy as np
 import polars as pl
 from polars.plugins import register_plugin_function
 
@@ -165,7 +164,7 @@ def _pre_process_data(
         else:
             features.append(target.fill_null(0.0).mul(0.0).add(1.0).alias("const"))
     # handle sample weights
-    sqrt_w = np.float32(1.0)
+    sqrt_w = 1.0
     if sample_weights is not None:
         sqrt_w = sample_weights.sqrt().cast(pl.Float32)
         target *= sqrt_w
