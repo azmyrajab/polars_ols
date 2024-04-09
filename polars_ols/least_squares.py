@@ -155,7 +155,7 @@ def _pre_process_data(
     Returns:
         Tuple containing the pre-processed target, features, and sample weights.
     """
-    target = parse_into_expr(target)
+    target = parse_into_expr(target).cast(pl.Float32)
     features = [f.cast(pl.Float32) for f in features]
     # handle intercept
     if add_intercept:
@@ -235,7 +235,7 @@ def compute_least_squares(
         if mode == "predictions":
             return predictions
         else:
-            return target - predictions
+            return target / sqrt_w - predictions
 
 
 def compute_recursive_least_squares(
@@ -299,7 +299,7 @@ def compute_recursive_least_squares(
         if mode == "predictions":
             return predictions
         else:
-            return target - predictions
+            return target / sqrt_w - predictions
 
 
 def compute_rolling_least_squares(
@@ -360,7 +360,7 @@ def compute_rolling_least_squares(
         if mode == "predictions":
             return predictions
         else:
-            return target - predictions
+            return target / sqrt_w - predictions
 
 
 def compute_least_squares_from_formula(
