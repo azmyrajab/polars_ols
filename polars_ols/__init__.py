@@ -1,4 +1,5 @@
-from typing import Literal, Optional
+from __future__ import annotations
+from typing import Optional
 
 import polars as pl
 

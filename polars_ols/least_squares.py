@@ -1,8 +1,9 @@
+from __future__ import annotations
 import logging
 from dataclasses import asdict, dataclass
 from functools import partial
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Set, get_args
+from typing import Any, Dict, List, Literal, Optional, Set, get_args, Union
 
 import numpy as np
 import polars as pl
@@ -94,7 +95,7 @@ class RLSKwargs:
 
     half_life: Optional[float] = None
     initial_state_covariance: Optional[float] = 10.0
-    initial_state_mean: Optional[List[float] | float] = None
+    initial_state_mean: Union[Optional[List[float], float]] = None
     null_policy: NullPolicy = "ignore"
 
     def to_dict(self) -> Dict[str, Any]:
