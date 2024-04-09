@@ -15,7 +15,7 @@ authors = [
   {name = "Azmy Rajab", email = "azmy.rajab@gmail.com"}
 ]
 dependencies = [
-  "polars >= 0.20.6",
+  "polars >= 0.20.16",
 ]
 keywords = ["polars-extension", "linear-regression"]
 readme = "README.md"
