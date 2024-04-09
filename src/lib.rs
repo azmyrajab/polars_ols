@@ -1,6 +1,5 @@
 mod expressions;
 pub mod least_squares;
-
 use pyo3::types::PyModule;
 use pyo3::{pymodule, PyResult, Python};
 

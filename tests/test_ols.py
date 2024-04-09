@@ -247,12 +247,13 @@ def test_fit_wide(n_features: int):
     ],
 )
 def test_fit_multi_collinear(n_features: int, solve_method: str):
+    n_samples = 100
     # note that:
     # - only SVD solver (equivalent to lstsq) ensures minimum norm solution in case of collinearity
     last_feature_name = f"x{n_features}"
     multicollinear_feature_name = f"x{n_features + 1}"
 
-    df = _make_data(n_samples=100, n_features=n_features, scale=1.0e-4)
+    df = _make_data(n_samples=n_samples, n_features=n_features, scale=1.0e-4)
     df = df.with_columns((pl.col(last_feature_name) + 1.0e-12).alias(multicollinear_feature_name))
 
     features = [pl.col(f) for f in df.columns if f.startswith("x")]

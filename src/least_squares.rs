@@ -1,12 +1,14 @@
 use std::cmp::max;
-use std::str::FromStr;
-
 use faer::linalg::solvers::SolverCore;
 use faer::prelude::*;
 use faer::Side;
 use faer_ext::{IntoFaer, IntoNdarray};
 use ndarray::{array, s, Array, Array1, Array2, ArrayView1, Axis, NewAxis};
+use std::str::FromStr;
+
+#[cfg(target_os = "macos")]
 use ndarray_linalg::LeastSquaresSvd;
+
 
 /// Invert square matrix input using either Cholesky or LU decomposition
 pub fn inv(array: &Array2<f32>, use_cholesky: bool) -> Array2<f32> {
@@ -53,6 +55,69 @@ impl FromStr for SolveMethod {
     }
 }
 
+
+/// Solves ridge regression using Singular Value Decomposition (SVD).
+///
+/// # Arguments
+///
+/// * `y` - Target vector.
+/// * `x` - Feature matrix.
+/// * `alpha` - Ridge parameter.
+/// * `rcond` - Relative condition number used to determine cutoff for small singular values.
+///
+/// # Returns
+///
+/// * Result of ridge regression as a 1-dimensional array.
+fn solve_ridge_svd(
+    y: &Array1<f32>,
+    x: &Array2<f32>,
+    alpha: f32,
+    rcond: Option<f32>,
+) -> Array1<f32> {
+    let x_faer = x.view().into_faer();
+    let y_faer = y.view().insert_axis(Axis(1)).into_faer();
+
+    // compute SVD and extract u, s, vt
+    let svd = x_faer.thin_svd();
+    let u = svd.u();
+    let v = svd.v().into_ndarray();
+    let s = svd.s_diagonal();
+
+    // convert s into ndarray
+    let s: Array1<f32> = s.as_2d().into_ndarray().slice(s![.., 0]).into_owned();
+    let max_value = s.iter().skip(1).copied().fold(s[0], f32::max);
+
+    // set singular values less than or equal to ``rcond * largest_singular_value`` to zero.
+    let cutoff =
+        rcond.unwrap_or(f32::EPSILON * max(x_faer.ncols(), x_faer.nrows()) as f32) * max_value;
+    let s = s.map(|v| if v < &cutoff { 0. } else { *v });
+
+    let binding = u.transpose() * y_faer;
+    let u_t_y: Array1<f32> = binding
+        .as_ref()
+        .into_ndarray()
+        .slice(s![.., 0])
+        .into_owned();
+    let d = &s / (&s * &s + alpha);
+    let d_ut_y = &d * &u_t_y;
+    v.dot(&d_ut_y)
+}
+
+
+#[cfg(not(target_os = "macos"))]
+fn solve_ols_svd(y: &Array1<f32>, x: &Array2<f32>) -> Array1<f32> {
+    // TODO: try to compute w/ LAPACK SVD. Must handle BLAS dependency on linux & windows OS
+    //      either use ndarray-linalg or directly call sgelsd from lapack crate..
+    solve_ridge_svd(y, x, f32::EPSILON, None)
+}
+
+#[cfg(target_os = "macos")]
+fn solve_ols_svd(y: &Array1<f32>, x: &Array2<f32>) -> Array1<f32> {
+    x.least_squares(y).expect("Failed to compute LAPACK SVD solution!").solution
+}
+
+
+
 /// Solves an ordinary least squares problem using either QR (faer) or LAPACK SVD
 /// Inputs: features (2d ndarray), targets (1d ndarray), and an optional enum denoting solve method
 /// Outputs: 1-d OLS coefficients
@@ -89,10 +154,7 @@ pub fn solve_ols(
             .slice(s![.., 0])
             .to_owned()
     } else {
-        // compute least squares via LAPACK SVD
-        x.least_squares(y)
-            .expect("failed to computed LAPACK SVD solution!")
-            .solution
+        solve_ols_svd(y, x)
     }
 }
 
@@ -128,52 +190,6 @@ fn solve_normal_equations(xtx: &Array2<f32>, xty: &Array1<f32>, use_cholesky: bo
         .into_owned()
 }
 
-/// Solves ridge regression using Singular Value Decomposition (SVD).
-///
-/// # Arguments
-///
-/// * `y` - Target vector.
-/// * `x` - Feature matrix.
-/// * `alpha` - Ridge parameter.
-/// * `rcond` - Relative condition number used to determine cutoff for small singular values.
-///
-/// # Returns
-///
-/// * Result of ridge regression as a 1-dimensional array.
-fn solve_ridge_svd(
-    y: &Array1<f32>,
-    x: &Array2<f32>,
-    alpha: f32,
-    rcond: Option<f32>,
-) -> Array1<f32> {
-    let x_faer = x.view().into_faer();
-    let y_faer = y.view().insert_axis(Axis(1)).into_faer();
-
-    // compute SVD and extract u, s, vt
-    let svd = x_faer.thin_svd();
-    let u = svd.u();
-    let vt = svd.v().into_ndarray();
-    let s = svd.s_diagonal();
-
-    // convert s into ndarray
-    let norm_max = s.norm_max();
-    let s: Array1<f32> = s.as_2d().into_ndarray().slice(s![.., 0]).into_owned();
-
-    // set singular values less than or equal to ``rcond * largest_singular_value`` to zero.
-    let cutoff =
-        rcond.unwrap_or(f32::EPSILON * max(x_faer.ncols(), x_faer.nrows()) as f32) * norm_max;
-    let s = s.map(|v| if v < &cutoff { 0. } else { *v });
-
-    let binding = u.transpose() * y_faer;
-    let u_t_y: Array1<f32> = binding
-        .as_ref()
-        .into_ndarray()
-        .slice(s![.., 0])
-        .into_owned();
-    let d = &s / (&s * &s + alpha);
-    let d_ut_y = &d * &u_t_y;
-    vt.t().dot(&d_ut_y)
-}
 
 /// Solves a ridge regression problem of the form: ||y - x B|| + alpha * ||B||
 /// Inputs: features (2d ndarray), targets (1d ndarray), ridge alpha scalar
