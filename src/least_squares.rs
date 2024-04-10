@@ -495,7 +495,7 @@ pub fn solve_rolling_ols(
 
     // we allow the user to pass a min_periods < k, but this may result in
     // unstable warm-up coefficients - so warn the user.
-    if (min_periods >= k && min_periods <= window_size) == false {
+    if !(min_periods >= k && min_periods <= window_size) {
         println!("warning: min_periods should be greater or equal to the number of regressors \
                   in the model and less than or equal to the window size otherwise \
                   estimated parameters may be unstable!")
