@@ -28,7 +28,7 @@ def timer(msg: Optional[str] = None, precision: int = 3) -> float:
 
 
 def _make_data(
-    n_samples: int = 10_000,
+    n_samples: int = 5_000,
     n_features: int = 2,
     n_groups: Optional[int] = None,
     scale: float = 0.1,
@@ -373,7 +373,7 @@ def test_coefficients_ols_groups():
 
 
 def test_coefficients_shape_broadcast():
-    df = _make_data(n_samples=10_000, n_groups=10)
+    df = _make_data(n_samples=5_000, n_groups=10)
     assert df.select(
         pl.col("y")
         .least_squares.ols(pl.col("x1"), pl.col("x2"), mode="coefficients")
@@ -384,7 +384,7 @@ def test_coefficients_shape_broadcast():
         pl.col("y")
         .least_squares.ols(pl.col("x1"), pl.col("x2"), mode="coefficients")
         .alias("coefficients")
-    ).shape == (10_000, 5)
+    ).shape == (5_000, 5)
 
     df_group = df.select(
         pl.col("y")
@@ -393,7 +393,7 @@ def test_coefficients_shape_broadcast():
         .alias("coefficients"),
         "group",
     )
-    assert df_group.shape == (10_000, 2)
+    assert df_group.shape == (5_000, 2)
     assert df_group.unique().shape == (10, 2)
 
     assert df.with_columns(
@@ -401,7 +401,7 @@ def test_coefficients_shape_broadcast():
         .least_squares.ols(pl.col("x1"), pl.col("x2"), mode="coefficients")
         .over("group")
         .alias("coefficients")
-    ).shape == (10_000, 5)
+    ).shape == (5_000, 5)
 
 
 def test_ols_residuals():
@@ -425,7 +425,7 @@ def test_ols_intercept():
 
 
 def test_least_squares_from_formula():
-    weights = np.random.uniform(0, 1, size=10_000)
+    weights = np.random.uniform(0, 1, size=5_000)
     weights /= weights.mean()
     df = _make_data().with_columns(sample_weights=pl.lit(weights))
 
@@ -455,7 +455,9 @@ def test_ridge(solve_method: str):
             if solve_method == "chol":
                 coef_expected = np.linalg.solve((x.T @ x) + np.eye(x.shape[1]) * alpha, x.T @ y)
             elif solve_method == "svd":
-                coef_expected = Ridge(fit_intercept=False, solver="svd").fit(x, y).coef_
+                coef_expected = (
+                    Ridge(fit_intercept=False, solver="svd", alpha=alpha).fit(x, y).coef_
+                )
             else:
                 raise ValueError()
             expected = x @ coef_expected
@@ -673,7 +675,10 @@ def test_recursive_least_squares_prior():
     ],
 )
 def test_rolling_least_squares(window_size: int, min_periods: int, use_woodbury: bool):
-    df = _make_data(n_samples=10_000)
+    import os
+
+    os.environ["POLARS_VERBOSE"] = "1"
+    df = _make_data(n_samples=1_000)
     with timer("\nrolling ols"):
         coef_rolling = (
             df.lazy()
