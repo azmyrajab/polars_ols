@@ -14,33 +14,33 @@ mod tests {
     use ndarray_linalg::assert_close_l2;
     use ndarray_rand::rand_distr::Normal;
     use ndarray_rand::RandomExt;
-    use polars::datatypes::DataType::Float32;
+    use polars::datatypes::DataType::Float64;
     use polars::prelude::*;
 
-    fn make_data(null_policy: Option<NullPolicy>) -> (Array1<f32>, Array2<f32>) {
+    fn make_data(null_policy: Option<NullPolicy>) -> (Array1<f64>, Array2<f64>) {
         let null_policy = null_policy.unwrap_or(NullPolicy::Ignore);
         let x1 = Series::from_vec(
             "x1",
             Array::random(10_000, Normal::new(0., 1.).unwrap()).to_vec(),
         )
-        .cast(&Float32)
+        .cast(&Float64)
         .unwrap();
         let x2 = Series::from_vec(
             "x2",
             Array::random(10_000, Normal::new(0., 1.).unwrap()).to_vec(),
         )
-        .cast(&Float32)
+        .cast(&Float64)
         .unwrap();
         let y = (&x1 + &x2).with_name("y");
 
-        convert_polars_to_ndarray(&[y.clone(), x1, x2], &null_policy)
+        convert_polars_to_ndarray(&[y.clone(), x1, x2], &null_policy, None)
     }
 
     #[test]
     fn test_ols() {
         let (targets, features) = make_data(None);
-        let coefficients_1 = solve_ols(&targets, &features, None);
-        let coefficients_2 = solve_ols(&targets, &features, Some(SolveMethod::SVD));
+        let coefficients_1 = solve_ols(&targets, &features, None, None);
+        let coefficients_2 = solve_ols(&targets, &features, Some(SolveMethod::SVD), None);
         let expected = array![1., 1.];
         assert_close_l2!(&coefficients_1, &coefficients_2, 0.001);
         assert_close_l2!(&coefficients_1, &expected, 0.001);
@@ -49,8 +49,8 @@ mod tests {
     #[test]
     fn test_ridge() {
         let (targets, features) = make_data(None);
-        let coefficients_1 = solve_ridge(&targets, &features, 10.0, None);
-        let coefficients_2 = solve_ridge(&targets, &features, 10.0, Some(SolveMethod::SVD));
+        let coefficients_1 = solve_ridge(&targets, &features, 10.0, None, None);
+        let coefficients_2 = solve_ridge(&targets, &features, 10.0, Some(SolveMethod::SVD), None);
         let expected = array![0.999, 0.999];
         assert_close_l2!(&coefficients_1, &coefficients_2, 0.001);
         assert_close_l2!(&coefficients_1, &expected, 0.001);
@@ -92,10 +92,10 @@ mod tests {
             &features,
             1_000usize,
             Some(100usize),
-            Some(true),
+            Some(false),
             None,
         );
-        let expected: Array1<f32> = array![1.0, 1.0];
+        let expected: Array1<f64> = array![1.0, 1.0];
         println!("{:?}", coefficients.slice(s![0, ..]));
         println!("{:?}", coefficients.slice(s![-1, ..]));
         assert_close_l2!(&coefficients.slice(s![-1, ..]), &expected, 0.0001);
@@ -125,7 +125,7 @@ mod tests {
     #[test]
     fn test_update_xtx_inv() {
         // Test matrices
-        let x = Array2::<f32>::random((252, 5), Normal::new(0., 1.).unwrap());
+        let x = Array2::<f64>::random((252, 5), Normal::new(0., 1.).unwrap());
 
         let xtx = x.t().dot(&x);
         let mut xtx_inv = inv(&xtx, true);
@@ -137,7 +137,7 @@ mod tests {
         // create rank 2 update array
         let x_update = ndarray::stack(Axis(0), &[x_old, x_new]).unwrap().clone(); // 2 x K
 
-        let c: Array2<f32> = array![[-1., 0.], [0., 1.]]; // subtract x_old, add x_new
+        let c: Array2<f64> = array![[-1., 0.], [0., 1.]]; // subtract x_old, add x_new
 
         // update xtx inv with [x_old, x_new] using woodbury
         xtx_inv = update_xtx_inv(&xtx_inv, &x_update, Some(&c));

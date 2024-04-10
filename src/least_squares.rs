@@ -10,7 +10,7 @@ use std::str::FromStr;
 use ndarray_linalg::LeastSquaresSvd;
 
 /// Invert square matrix input using either Cholesky or LU decomposition
-pub fn inv(array: &Array2<f32>, use_cholesky: bool) -> Array2<f32> {
+pub fn inv(array: &Array2<f64>, use_cholesky: bool) -> Array2<f64> {
     let m = array.view().into_faer();
     if use_cholesky {
         match m.cholesky(Side::Lower) {
@@ -67,11 +67,11 @@ impl FromStr for SolveMethod {
 ///
 /// * Result of ridge regression as a 1-dimensional array.
 fn solve_ridge_svd(
-    y: &Array1<f32>,
-    x: &Array2<f32>,
-    alpha: f32,
-    rcond: Option<f32>,
-) -> Array1<f32> {
+    y: &Array1<f64>,
+    x: &Array2<f64>,
+    alpha: f64,
+    rcond: Option<f64>,
+) -> Array1<f64> {
     let x_faer = x.view().into_faer();
     let y_faer = y.view().insert_axis(Axis(1)).into_faer();
 
@@ -82,16 +82,16 @@ fn solve_ridge_svd(
     let s = svd.s_diagonal();
 
     // convert s into ndarray
-    let s: Array1<f32> = s.as_2d().into_ndarray().slice(s![.., 0]).into_owned();
-    let max_value = s.iter().skip(1).copied().fold(s[0], f32::max);
+    let s: Array1<f64> = s.as_2d().into_ndarray().slice(s![.., 0]).into_owned();
+    let max_value = s.iter().skip(1).copied().fold(s[0], f64::max);
 
     // set singular values less than or equal to ``rcond * largest_singular_value`` to zero.
     let cutoff =
-        rcond.unwrap_or(f32::EPSILON * max(x_faer.ncols(), x_faer.nrows()) as f32) * max_value;
+        rcond.unwrap_or(f64::EPSILON * max(x_faer.ncols(), x_faer.nrows()) as f64) * max_value;
     let s = s.map(|v| if v < &cutoff { 0. } else { *v });
 
     let binding = u.transpose() * y_faer;
-    let u_t_y: Array1<f32> = binding
+    let u_t_y: Array1<f64> = binding
         .as_ref()
         .into_ndarray()
         .slice(s![.., 0])
@@ -102,14 +102,15 @@ fn solve_ridge_svd(
 }
 
 #[cfg(not(target_os = "macos"))]
-fn solve_ols_svd(y: &Array1<f32>, x: &Array2<f32>) -> Array1<f32> {
+fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1<f64> {
     // TODO: try to compute w/ LAPACK SVD. Must handle BLAS dependency on linux & windows OS
     //      either use ndarray-linalg or directly call sgelsd from lapack crate..
-    solve_ridge_svd(y, x, f32::EPSILON, None)
+    solve_ridge_svd(y, x, 1.0e-64, rcond) // near zero ridge penalty
 }
 
 #[cfg(target_os = "macos")]
-fn solve_ols_svd(y: &Array1<f32>, x: &Array2<f32>) -> Array1<f32> {
+#[allow(unused_variables)]
+fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1<f64> {
     x.least_squares(y)
         .expect("Failed to compute LAPACK SVD solution!")
         .solution
@@ -119,10 +120,11 @@ fn solve_ols_svd(y: &Array1<f32>, x: &Array2<f32>) -> Array1<f32> {
 /// Inputs: features (2d ndarray), targets (1d ndarray), and an optional enum denoting solve method
 /// Outputs: 1-d OLS coefficients
 pub fn solve_ols(
-    y: &Array1<f32>,
-    x: &Array2<f32>,
+    y: &Array1<f64>,
+    x: &Array2<f64>,
     solve_method: Option<SolveMethod>,
-) -> Array1<f32> {
+    rcond: Option<f64>,
+) -> Array1<f64> {
     let n_features = x.len_of(Axis(1));
     let n_samples = x.len_of(Axis(0));
 
@@ -151,13 +153,13 @@ pub fn solve_ols(
             .slice(s![.., 0])
             .to_owned()
     } else {
-        solve_ols_svd(y, x)
+        solve_ols_svd(y, x, rcond)
     }
 }
 
 /// Solves the normal equations: (X^T X) coefficients = X^T Y
 /// Attempts to solve with either Cholesky or LU (partial pivoting)
-fn solve_normal_equations(xtx: &Array2<f32>, xty: &Array1<f32>, use_cholesky: bool) -> Array1<f32> {
+fn solve_normal_equations(xtx: &Array2<f64>, xty: &Array1<f64>, use_cholesky: bool) -> Array1<f64> {
     // Attempt to solve via Cholesky decomposition
     let xtx_faer = xtx.view().into_faer();
     if use_cholesky {
@@ -190,11 +192,12 @@ fn solve_normal_equations(xtx: &Array2<f32>, xty: &Array1<f32>, use_cholesky: bo
 /// Solves a ridge regression problem of the form: ||y - x B|| + alpha * ||B||
 /// Inputs: features (2d ndarray), targets (1d ndarray), ridge alpha scalar
 pub fn solve_ridge(
-    y: &Array1<f32>,
-    x: &Array2<f32>,
-    alpha: f32,
+    y: &Array1<f64>,
+    x: &Array2<f64>,
+    alpha: f64,
     solve_method: Option<SolveMethod>,
-) -> Array1<f32> {
+    rcond: Option<f64>,
+) -> Array1<f64> {
     assert!(alpha >= 0., "alpha must be non-negative");
     match solve_method {
         Some(SolveMethod::Cholesky) | Some(SolveMethod::LU) | None => {
@@ -203,14 +206,14 @@ pub fn solve_ridge(
             let x_t_y = x_t.dot(y);
             let eye = Array::eye(x_t_x.shape()[0]);
             let ridge_matrix = &x_t_x + &eye * alpha;
-            // use cholesky if solve_method is either None or cholesky, and otherwise LU.
+            // use cholesky if specifically chosen, and otherwise LU.
             solve_normal_equations(
                 &ridge_matrix,
                 &x_t_y,
                 solve_method == Some(SolveMethod::Cholesky),
             )
         }
-        Some(SolveMethod::SVD) => solve_ridge_svd(y, x, alpha, None),
+        Some(SolveMethod::SVD) => solve_ridge_svd(y, x, alpha, rcond),
         _ => panic!(
             "Only 'Cholesky', 'LU', & 'SVD' are currently supported solver \
         methods for Ridge."
@@ -218,7 +221,7 @@ pub fn solve_ridge(
     }
 }
 
-fn soft_threshold(x: &f32, alpha: f32, positive: bool) -> f32 {
+fn soft_threshold(x: &f64, alpha: f64, positive: bool) -> f64 {
     let mut result = x.signum() * (x.abs() - alpha).max(0.0);
     if positive {
         result = result.max(0.0);
@@ -232,15 +235,15 @@ fn soft_threshold(x: &f32, alpha: f32, positive: bool) -> f32 {
 /// general soft thresholding function.
 #[allow(clippy::too_many_arguments)]
 pub fn solve_elastic_net(
-    y: &Array1<f32>,
-    x: &Array2<f32>,
-    alpha: f32,            // strictly positive regularization parameter
-    l1_ratio: Option<f32>, // scalar strictly between 0 (full ridge) and 1 (full lasso)
+    y: &Array1<f64>,
+    x: &Array2<f64>,
+    alpha: f64,            // strictly positive regularization parameter
+    l1_ratio: Option<f64>, // scalar strictly between 0 (full ridge) and 1 (full lasso)
     max_iter: Option<usize>,
-    tol: Option<f32>,       // controls convergence criteria between iterations
+    tol: Option<f64>,       // controls convergence criteria between iterations
     positive: Option<bool>, // enforces non-negativity constraint
     solve_method: Option<SolveMethod>,
-) -> Array1<f32> {
+) -> Array1<f64> {
     let l1_ratio = l1_ratio.unwrap_or(0.5);
     let max_iter = max_iter.unwrap_or(1_000);
     let tol = tol.unwrap_or(0.00001);
@@ -261,10 +264,10 @@ pub fn solve_elastic_net(
     );
 
     let (n_samples, n_features) = (x.shape()[0], x.shape()[1]);
-    let mut w = Array1::<f32>::zeros(n_features);
+    let mut w = Array1::<f64>::zeros(n_features);
     let xtx = x.t().dot(x);
     let mut residuals = y.to_owned(); // Initialize residuals
-    let alpha = alpha * n_samples as f32;
+    let alpha = alpha * n_samples as f64;
 
     for _ in 0..max_iter {
         let w_old = w.clone();
@@ -291,30 +294,30 @@ pub fn solve_elastic_net(
 }
 
 pub struct RecursiveLeastSquares {
-    forgetting_factor: f32, // exponential decay factor
-    coef: Array1<f32>,      // coefficient vector
-    p: Array2<f32>,         // state covariance
-    k: Array1<f32>,         // kalman gain
+    forgetting_factor: f64, // exponential decay factor
+    coef: Array1<f64>,      // coefficient vector
+    p: Array2<f64>,         // state covariance
+    k: Array1<f64>,         // kalman gain
 }
 
 impl RecursiveLeastSquares {
     pub fn new(
         num_features: usize,
-        lam: f32,
-        half_life: Option<f32>,
-        initial_state_mean: Option<Array1<f32>>,
+        lam: f64,
+        half_life: Option<f64>,
+        initial_state_mean: Option<Array1<f64>>,
     ) -> Self {
         // calculate forgetting_factor based on the value of half_life, default to 1.0
         // (expanding ols)
         let forgetting_factor = if let Some(half_life) = half_life {
-            (0.5f32.ln() / half_life).exp()
+            (0.5f64.ln() / half_life).exp()
         } else {
             1.0
         };
 
-        let coef = Array1::<f32>::zeros(num_features);
-        let p = Array2::<f32>::eye(num_features) * lam;
-        let k = Array1::<f32>::zeros(num_features);
+        let coef = Array1::<f64>::zeros(num_features);
+        let p = Array2::<f64>::eye(num_features) * lam;
+        let k = Array1::<f64>::zeros(num_features);
         let coef = initial_state_mean.unwrap_or(coef);
         RecursiveLeastSquares {
             forgetting_factor,
@@ -324,7 +327,7 @@ impl RecursiveLeastSquares {
         }
     }
 
-    pub fn update(&mut self, x: &Array1<f32>, y: f32) {
+    pub fn update(&mut self, x: &Array1<f64>, y: f64) {
         let r = 1.0 + x.t().dot(&self.p).dot(x) / self.forgetting_factor;
         self.k
             .assign(&(&self.p.dot(x) / (r * self.forgetting_factor)));
@@ -335,7 +338,7 @@ impl RecursiveLeastSquares {
             .assign(&(&self.p / self.forgetting_factor - k_.dot(&k_.t()) * r));
     }
 
-    pub fn predict(&self, x: &Array1<f32>) -> f32 {
+    pub fn predict(&self, x: &Array1<f64>) -> f64 {
         x.dot(&self.coef)
     }
 }
@@ -360,12 +363,12 @@ impl RecursiveLeastSquares {
 /// # Returns
 /// A two-dimensional array containing the updated coefficients of the linear regression model.
 pub fn solve_recursive_least_squares(
-    y: &Array1<f32>,
-    x: &Array2<f32>,
-    half_life: Option<f32>,
-    initial_state_covariance: Option<f32>,
-    initial_state_mean: Option<Array1<f32>>,
-) -> Array2<f32> {
+    y: &Array1<f64>,
+    x: &Array2<f64>,
+    half_life: Option<f64>,
+    initial_state_covariance: Option<f64>,
+    initial_state_mean: Option<Array1<f64>>,
+) -> Array2<f64> {
     let (n_samples, n_features) = (x.shape()[0], x.shape()[1]);
     let mut recursive_least_squares = RecursiveLeastSquares::new(
         n_features,
@@ -373,8 +376,8 @@ pub fn solve_recursive_least_squares(
         half_life,
         initial_state_mean,
     );
-    // let mut predictions = Array1::<f32>::zeros(n_samples);
-    let mut coefficients = Array2::<f32>::zeros((n_samples, n_features));
+    // let mut predictions = Array1::<f64>::zeros(n_samples);
+    let mut coefficients = Array2::<f64>::zeros((n_samples, n_features));
 
     for t in 0..n_samples {
         let y_t = y[t];
@@ -388,7 +391,7 @@ pub fn solve_recursive_least_squares(
     coefficients
 }
 
-pub fn outer_product(u: &ArrayView1<f32>, v: &ArrayView1<f32>) -> Array2<f32> {
+pub fn outer_product(u: &ArrayView1<f64>, v: &ArrayView1<f64>) -> Array2<f64> {
     // Reshape u and v to have a shape of (n, 1) and (1, m) respectively
     let u_reshaped = u.insert_axis(Axis(1));
     let v_reshaped = v.insert_axis(Axis(0));
@@ -397,10 +400,10 @@ pub fn outer_product(u: &ArrayView1<f32>, v: &ArrayView1<f32>) -> Array2<f32> {
     u_reshaped.dot(&v_reshaped)
 }
 
-fn inv_diag(c: &Array2<f32>) -> Array2<f32> {
+fn inv_diag(c: &Array2<f64>) -> Array2<f64> {
     let s = c.raw_dim();
     assert!(s[0] == s[1]);
-    let mut res: Array2<f32> = Array2::zeros(s);
+    let mut res: Array2<f64> = Array2::zeros(s);
     for i in 0..s[0] {
         res[(i, i)] = c[(i, i)].recip();
     }
@@ -418,12 +421,12 @@ fn inv_diag(c: &Array2<f32>) -> Array2<f32> {
 /// (A + U C V)^{-1} = A^{-1} - A^{-1} U (C^{-1} + V A^{-1} U)^{-1} V A^{-1}
 /// ```
 pub fn woodbury_update(
-    a_inv: &Array2<f32>,
-    u: &Array2<f32>,
-    c: &Array2<f32>,
-    v: &Array2<f32>,
+    a_inv: &Array2<f64>,
+    u: &Array2<f64>,
+    c: &Array2<f64>,
+    v: &Array2<f64>,
     c_is_diag: Option<bool>,
-) -> Array2<f32> {
+) -> Array2<f64> {
     // Check if c_is_diag is Some(true)
     let inv_c = if let Some(true) = c_is_diag {
         inv_diag(c)
@@ -440,10 +443,10 @@ pub fn woodbury_update(
 
 /// Function to update inv(X^TX) by x_update array of rank r using Woodbury Identity.
 pub fn update_xtx_inv(
-    xtx_inv: &Array2<f32>,
-    x_update: &Array2<f32>,
-    c: Option<&Array2<f32>>,
-) -> Array2<f32> {
+    xtx_inv: &Array2<f64>,
+    x_update: &Array2<f64>,
+    c: Option<&Array2<f64>>,
+) -> Array2<f64> {
     // Reshape x_new and x_old for Woodbury update
     let u = x_update.t().to_owned(); // K x r
     let v = u.t().to_owned(); // r x K
@@ -475,19 +478,19 @@ pub fn update_xtx_inv(
 ///                    which propagates inv(XTX) directly. If not provided, it defaults to `false`.
 ///
 pub fn solve_rolling_ols(
-    y: &Array1<f32>,
-    x: &Array2<f32>,
+    y: &Array1<f64>,
+    x: &Array2<f64>,
     window_size: usize,
     min_periods: Option<usize>,
     use_woodbury: Option<bool>,
-    alpha: Option<f32>,
-) -> Array2<f32> {
+    alpha: Option<f64>,
+) -> Array2<f64> {
     let n = x.shape()[0];
     let k = x.shape()[1]; // Number of independent variables
     let min_periods = min_periods.unwrap_or(std::cmp::min(k, window_size));
     // default to using woodbury if number of features is relatively large.
     let use_woodbury = use_woodbury.unwrap_or(k > 60);
-    let mut coefficients = Array2::zeros((n, k));
+    let mut coefficients = Array2::from_elem((n, k), f64::NAN);
     let alpha = alpha.unwrap_or(0.0);
 
     // we allow the user to pass a min_periods < k, but this may result in
@@ -506,7 +509,7 @@ pub fn solve_rolling_ols(
 
     // add ridge penalty
     if alpha > 0. {
-        xtx = xtx + Array2::<f32>::eye(k) * alpha
+        xtx = xtx + Array2::<f64>::eye(k) * alpha
     }
 
     // Use woodbury to propagate inv(X.T X) & (X.T Y)
@@ -519,15 +522,14 @@ pub fn solve_rolling_ols(
             .assign(&coef_warmup);
 
         // make c [[-1, 0], [0, 1]]; which drops old and adds new
-        let c: Array2<f32> = array![[-1., 0.], [0., 1.]];
+        let c: Array2<f64> = array![[-1., 0.], [0., 1.]];
 
         // Slide the window and update coefficients
         for i in min_periods..n {
             let i_start = i.saturating_sub(window_size);
-
             let x_new = x.row(i);
 
-            if i > window_size {
+            if i > window_size - 1 {
                 let x_prev = x.row(i_start);
 
                 // create rank 2 update array
@@ -552,6 +554,7 @@ pub fn solve_rolling_ols(
         // update X.T X & X.T Y and solve normal equations at every time step
         // assign warm-up coefficients
         let coef_warmup = solve_normal_equations(&xtx, &xty, false);
+
         coefficients
             .slice_mut(s![min_periods - 1, ..])
             .assign(&coef_warmup);
@@ -559,7 +562,6 @@ pub fn solve_rolling_ols(
         // Slide the window and update coefficients
         for i in min_periods..n {
             let i_start = i.saturating_sub(window_size);
-
             // update XTX w/ latest data point
             let x_new = x.row(i);
 
@@ -568,7 +570,7 @@ pub fn solve_rolling_ols(
             xty = xty + &x_new * y[i];
 
             // Subtract the previous contribution
-            if i > window_size {
+            if i > window_size - 1 {
                 let x_prev = x.row(i_start);
                 xtx -= &outer_product(&x_prev, &x_prev);
                 xty = xty - &x_prev * y[i_start];

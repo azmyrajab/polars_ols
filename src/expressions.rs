@@ -1,7 +1,7 @@
 #![allow(clippy::unit_arg, clippy::unused_unit)]
 
 use ndarray::{Array, Array1, Array2, Axis};
-use polars::datatypes::{DataType, Field, Float32Type};
+use polars::datatypes::{DataType, Field, Float64Type};
 use polars::error::{polars_err, PolarsResult};
 use polars::frame::DataFrame;
 use polars::prelude::{
@@ -17,11 +17,11 @@ use crate::least_squares::{
 };
 
 /// convert a slice of polars series into a 2D feature array.
-fn construct_features_array(inputs: &[Series], fill_zero: bool) -> Array2<f32> {
+fn construct_features_array(inputs: &[Series], fill_zero: bool) -> Array2<f64> {
     let m = inputs.len();
     let n = inputs[0].len();
     // Prepare features ndarray
-    let mut x: Array<f32, _> = Array::zeros((n, m));
+    let mut x: Array<f64, _> = Array::zeros((n, m));
     x.axis_iter_mut(Axis(1))
         .enumerate()
         .for_each(|(j, mut col)| {
@@ -29,18 +29,18 @@ fn construct_features_array(inputs: &[Series], fill_zero: bool) -> Array2<f32> {
                 // Convert Series to ndarray
                 let filled = inputs[j].fill_null(FillNullStrategy::Zero).unwrap();
                 let s = filled
-                    .f32()
-                    .expect("Failed to convert polars series to f32 array")
+                    .f64()
+                    .expect("Failed to convert polars series to f64 array")
                     .to_ndarray()
-                    .expect("Failed to convert f32 series to ndarray");
+                    .expect("Failed to convert f64 series to ndarray");
                 col.assign(&s);
             } else {
                 // Convert Series to ndarray
                 let s = inputs[j]
-                    .f32()
-                    .expect("Failed to convert polars series to f32 array")
+                    .f64()
+                    .expect("Failed to convert polars series to f64 array")
                     .to_ndarray()
-                    .expect("Failed to convert f32 series to ndarray");
+                    .expect("Failed to convert f64 series to ndarray");
                 col.assign(&s);
             }
         });
@@ -52,7 +52,7 @@ pub fn convert_polars_to_ndarray(
     inputs: &[Series],
     null_policy: &NullPolicy,
     is_valid: Option<&BooleanChunked>,
-) -> (Array1<f32>, Array2<f32>) {
+) -> (Array1<f64>, Array2<f64>) {
     let m = inputs.len();
     assert!(m > 1, "must pass at least 2 series");
 
@@ -62,10 +62,10 @@ pub fn convert_polars_to_ndarray(
 
     // prepare targets & features ndarrays. assume first series is targets and rest are features.
     let y = filtered_inputs[0]
-        .f32()
-        .expect("Failed to convert polars series to f32 array")
+        .f64()
+        .expect("Failed to convert polars series to f64 array")
         .to_ndarray()
-        .expect("Failed to convert f32 series to ndarray")
+        .expect("Failed to convert f64 series to ndarray")
         .to_owned();
 
     // note that this was faster than converting polars series -> polars dataframe -> to_ndarray
@@ -89,7 +89,7 @@ fn coefficients_struct_dtype(input_fields: &[Field]) -> PolarsResult<Field> {
 }
 
 /// Convert the coefficients into a Polars series of struct dtype.
-fn coefficients_to_struct_series(coefficients: &Array2<f32>) -> Series {
+fn coefficients_to_struct_series(coefficients: &Array2<f64>) -> Series {
     // Convert 2D ndarray into DataFrame
     let df: DataFrame = DataFrame::new(
         coefficients
@@ -103,7 +103,7 @@ fn coefficients_to_struct_series(coefficients: &Array2<f32>) -> Series {
     df.into_struct("coefficients").into_series()
 }
 
-fn mask_predictions(predictions: Vec<f32>, is_valid_mask: &BooleanChunked) -> Vec<Option<f32>> {
+fn mask_predictions(predictions: Vec<f64>, is_valid_mask: &BooleanChunked) -> Vec<Option<f64>> {
     is_valid_mask
         .iter()
         .zip(&predictions)
@@ -129,8 +129,8 @@ fn mask_predictions(predictions: Vec<f32>, is_valid_mask: &BooleanChunked) -> Ve
 /// # Returns
 /// A Polars Series containing the computed predictions.
 fn make_predictions(
-    features: &Array2<f32>,
-    coefficients: &Array1<f32>,
+    features: &Array2<f64>,
+    coefficients: &Array1<f64>,
     is_valid_mask: Option<&BooleanChunked>,
     name: &str,
 ) -> Series {
@@ -138,7 +138,7 @@ fn make_predictions(
     let predictions = features.dot(coefficients).to_vec();
     if let Some(is_valid) = is_valid_mask {
         // is_valid mask has been passed: when true retain values and otherwise mask with None.
-        let masked_predictions: Vec<Option<f32>> = mask_predictions(predictions, is_valid);
+        let masked_predictions: Vec<Option<f64>> = mask_predictions(predictions, is_valid);
         Series::new(name, &masked_predictions)
     } else {
         // no mask is provided, return predictions as-is
@@ -146,7 +146,7 @@ fn make_predictions(
     }
 }
 
-fn convert_option_vec_to_array1(opt_vec: Option<Vec<f32>>) -> Option<Array1<f32>> {
+fn convert_option_vec_to_array1(opt_vec: Option<Vec<f64>>) -> Option<Array1<f64>> {
     opt_vec.map(Array1::from)
 }
 
@@ -245,20 +245,21 @@ fn handle_nulls(
 
 #[derive(Deserialize)]
 pub struct OLSKwargs {
-    alpha: Option<f32>,
-    l1_ratio: Option<f32>,
+    alpha: Option<f64>,
+    l1_ratio: Option<f64>,
     max_iter: Option<usize>,
-    tol: Option<f32>,
+    tol: Option<f64>,
     positive: Option<bool>,
     solve_method: Option<String>,
     null_policy: Option<String>,
+    rcond: Option<f64>,
 }
 
 #[derive(Deserialize)]
 pub struct RLSKwargs {
-    half_life: Option<f32>,
-    initial_state_covariance: Option<f32>,
-    initial_state_mean: Option<Vec<f32>>, // in python list[f32] | None is equivalent
+    half_life: Option<f64>,
+    initial_state_covariance: Option<f64>,
+    initial_state_mean: Option<Vec<f64>>, // in python list[f64] | None is equivalent
     null_policy: Option<String>,
 }
 
@@ -267,7 +268,7 @@ pub struct RollingKwargs {
     window_size: usize,
     min_periods: Option<usize>,
     use_woodbury: Option<bool>,
-    alpha: Option<f32>,
+    alpha: Option<f64>,
     null_policy: Option<String>,
 }
 
@@ -296,10 +297,15 @@ macro_rules! impl_has_null_policy {
 impl_has_null_policy!(OLSKwargs, RLSKwargs, RollingKwargs, PredictKwargs);
 
 fn _get_least_squares_coefficients(
-    targets: &Array1<f32>,
-    features: &Array2<f32>,
+    targets: &Array1<f64>,
+    features: &Array2<f64>,
     kwargs: OLSKwargs,
-) -> Array1<f32> {
+) -> Array1<f64> {
+    // handle degenerate case of no data
+    if features.is_empty() {
+        return Array1::zeros(features.len_of(Axis(1)));
+    }
+
     let alpha = kwargs.alpha.unwrap_or(0.0);
     let positive = kwargs.positive.unwrap_or(false);
     let solve_method = kwargs
@@ -312,9 +318,9 @@ fn _get_least_squares_coefficients(
             None | Some(SolveMethod::SVD) | Some(SolveMethod::QR)
         )
     {
-        solve_ols(targets, features, solve_method)
+        solve_ols(targets, features, solve_method, kwargs.rcond)
     } else if alpha >= 0. && kwargs.l1_ratio.unwrap_or(0.0) == 0. && !positive {
-        solve_ridge(targets, features, alpha, solve_method)
+        solve_ridge(targets, features, alpha, solve_method, kwargs.rcond)
     } else {
         solve_elastic_net(
             targets,
@@ -329,7 +335,7 @@ fn _get_least_squares_coefficients(
     }
 }
 
-#[polars_expr(output_type=Float32)]
+#[polars_expr(output_type=Float64)]
 fn least_squares(inputs: &[Series], kwargs: OLSKwargs) -> PolarsResult<Series> {
     let null_policy = kwargs.get_null_policy();
     let is_valid = compute_is_valid_mask(inputs, &null_policy);
@@ -403,7 +409,7 @@ fn recursive_least_squares_coefficients(
     Ok(series.with_name("coefficients"))
 }
 
-#[polars_expr(output_type=Float32)]
+#[polars_expr(output_type=Float64)]
 fn recursive_least_squares(inputs: &[Series], kwargs: RLSKwargs) -> PolarsResult<Series> {
     let null_policy = kwargs.get_null_policy();
     assert!(
@@ -445,7 +451,7 @@ fn rolling_least_squares_coefficients(
     Ok(series.with_name("coefficients"))
 }
 
-#[polars_expr(output_type=Float32)]
+#[polars_expr(output_type=Float64)]
 fn rolling_least_squares(inputs: &[Series], kwargs: RollingKwargs) -> PolarsResult<Series> {
     let null_policy = kwargs.get_null_policy();
     assert!(
@@ -468,7 +474,7 @@ fn rolling_least_squares(inputs: &[Series], kwargs: RollingKwargs) -> PolarsResu
 /// This function provides a convenience expression to multiply fitted coefficients with features,
 /// which may be particularly useful in case predicting on test data
 /// (otherwise use direct prediction functions).
-#[polars_expr(output_type=Float32)]
+#[polars_expr(output_type=Float64)]
 fn predict(inputs: &[Series], kwargs: PredictKwargs) -> PolarsResult<Series> {
     let null_policy = kwargs.get_null_policy();
     // The first input is always assumed to be the coefficient struct, and the remaining
@@ -480,8 +486,8 @@ fn predict(inputs: &[Series], kwargs: PredictKwargs) -> PolarsResult<Series> {
         .unnest();
     // compute predictions assuming zero filled features
     let features = construct_features_array(&inputs[1..], null_policy != NullPolicy::Ignore);
-    let coefficients: Array2<f32> = coefficients_df
-        .to_ndarray::<Float32Type>(IndexOrder::C)
+    let coefficients: Array2<f64> = coefficients_df
+        .to_ndarray::<Float64Type>(IndexOrder::C)
         .unwrap();
     let predictions = (&features * &coefficients).sum_axis(Axis(1)).to_vec();
 

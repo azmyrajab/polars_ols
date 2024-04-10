@@ -75,6 +75,9 @@ class OLSKwargs:
         solve_method: Algorithm used for computing least squares solution.
             Defaults to None, where a recommended default method is chosen based on problem
             specifics.
+        rcond: Optional float specifying cut-off ratio for small singular values. Only relevant for
+               "SVD" solve methods. Defaults to None, where it is chosen as per
+                numpy lstsq convention.
     """
 
     alpha: Optional[float] = 0.0
@@ -84,6 +87,7 @@ class OLSKwargs:
     positive: Optional[bool] = False  # if True, imposes non-negativity constraint on coefficients
     null_policy: NullPolicy = "ignore"
     solve_method: Optional[SolveMethod] = None
+    rcond: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -151,7 +155,7 @@ def _pre_process_data(
     sample_weights: Optional[pl.Expr],
     add_intercept: bool,
 ):
-    """Pre-processes the input data by casting it to float32 and scaling it with sample weights if
+    """Pre-processes the input data by casting it to float64 and scaling it with sample weights if
      provided.
 
     Args:
@@ -163,21 +167,21 @@ def _pre_process_data(
     Returns:
         Tuple containing the pre-processed target, features, and sample weights.
     """
-    target = parse_into_expr(target).cast(pl.Float32)
-    features = [f.cast(pl.Float32) for f in features]
+    target = parse_into_expr(target).cast(pl.Float64)
+    features = [f.cast(pl.Float64) for f in features]
     # handle intercept
     if add_intercept:
         if any(f.meta.output_name == "const" for f in features):
             logger.info("feature named 'const' already detected, assuming it is an intercept")
         else:
-            features.append(target.fill_null(0.0).mul(0.0).add(1.0).alias("const").cast(pl.Float32))
+            features.append(target.fill_null(0.0).mul(0.0).add(1.0).alias("const").cast(pl.Float64))
     # handle sample weights
     sqrt_w = 1.0
     if sample_weights is not None:
-        sqrt_w = sample_weights.sqrt().cast(pl.Float32)
+        sqrt_w = sample_weights.sqrt().cast(pl.Float64)
         target *= sqrt_w
-        features = [(expr * sqrt_w).cast(pl.Float32) for expr in features]
-    return target.cast(pl.Float32), features, sqrt_w
+        features = [(expr * sqrt_w).cast(pl.Float64) for expr in features]
+    return target.cast(pl.Float64), features, sqrt_w
 
 
 def compute_least_squares(
@@ -444,7 +448,7 @@ def predict(
     return register_plugin_function(
         plugin_path=Path(__file__).parent,
         function_name="predict",
-        args=[coefficients, *(f.cast(pl.Float32) for f in features)],
+        args=[coefficients, *(f.cast(pl.Float64) for f in features)],
         kwargs={"null_policy": null_policy},
         is_elementwise=False,
     ).alias(name or "predictions")

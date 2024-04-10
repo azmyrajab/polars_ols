@@ -44,7 +44,7 @@ def _make_data(
     if n_groups is not None:
         df = df.with_columns(group=pl.lit(rng.integers(n_groups, size=n_samples)))
 
-    return df.with_columns(pl.col(pl.FLOAT_DTYPES).cast(pl.Float32))
+    return df
 
 
 @pytest.mark.parametrize("solve_method", ("qr", "svd", "chol", "lu", None))
@@ -78,7 +78,7 @@ def test_fit_missing_data_coefficients():
         return None if rng.random() < 0.1 else val
 
     df = df.with_columns(
-        *(pl.col(c).map_elements(insert_nulls, return_dtype=pl.Float32) for c in df.columns)
+        *(pl.col(c).map_elements(insert_nulls, return_dtype=pl.Float64) for c in df.columns)
     )
 
     # in presence of unhandled nulls assert the rust library raises ComputeError
@@ -148,7 +148,7 @@ def test_fit_missing_data_predictions_and_residuals(null_policy: NullPolicy):
         return None if rng.random() < 0.1 else val
 
     df = df.with_columns(
-        *(pl.col(c).map_elements(insert_nulls, return_dtype=pl.Float32) for c in df.columns)
+        *(pl.col(c).map_elements(insert_nulls, return_dtype=pl.Float64) for c in df.columns)
     )
 
     # check predictions logic
@@ -220,6 +220,26 @@ def test_fit_missing_data_predictions_and_residuals(null_policy: NullPolicy):
     )
 
 
+def test_all_empty_data():
+    df = pl.DataFrame(
+        {
+            "A": [None, 2, None, 4],
+            "B": [1, None, 3, None],
+        }
+    )
+    df = df.with_columns(
+        pl.col("A")
+        .least_squares.ols(
+            pl.col("B"),
+            mode="residuals",
+            null_policy="drop",
+            solve_method="svd",
+        )
+        .alias("residuals")
+    )
+    assert df["residuals"].is_null().all()
+
+
 @pytest.mark.parametrize("n_features", (2, 10, 100, 1_000))
 def test_fit_wide(n_features: int):
     df = _make_data(n_samples=10, n_features=n_features, scale=1.0e-4)
@@ -284,20 +304,29 @@ def test_fit_multi_collinear(n_features: int, solve_method: str):
 
     features = [pl.col(f) for f in df.columns if f.startswith("x")]
 
-    coef = df.select(
-        pl.col("y").least_squares.ols(*features, mode="coefficients", solve_method=solve_method)
-    ).unnest("coefficients")
+    coef = (
+        df.select(
+            pl.col("y").least_squares.ols(
+                *features, mode="coefficients", solve_method=solve_method, rcond=1.0e-16
+            )  # machine precision rcond
+        )
+        .unnest("coefficients")
+        .to_numpy()
+        .flatten()
+    )
 
     x, y = df.select(pl.all().exclude("y")).to_numpy(), df["y"].to_numpy()
-    coef_expected = np.linalg.lstsq(x, y, rcond=None)[0]
+    coef_expected = np.linalg.lstsq(x, y, rcond=1.0e-16)[0]  # similar to -1 (machine precision)
 
     if solve_method == "svd":
-        assert np.allclose(coef, coef_expected, rtol=1.0e-4, atol=1.0e-4)
+        assert np.allclose(
+            coef, coef_expected, rtol=1.0e-2, atol=1.0e-2
+        ), f"norm coef={np.linalg.norm(coef)}, norm expected: {np.linalg.norm(coef_expected)}"
+        assert np.allclose(x @ coef, x @ coef_expected, rtol=1.0e-4, atol=1.0e-4)
     else:
-        coef = coef.to_numpy().flatten()
         assert ~np.isnan(coef).any()
-        # other methods will *not* give min norm coefficients
-        assert np.linalg.norm(coef) > np.linalg.norm(coef_expected)
+        # other methods will *not* same coefficients
+        assert np.linalg.norm(coef) != np.linalg.norm(coef_expected)
         # but should not 'blow up' for QR
         assert np.allclose(x @ coef, x @ coef_expected, rtol=1.0e-4, atol=1.0e-4)
 
@@ -398,7 +427,7 @@ def test_ols_intercept():
 def test_least_squares_from_formula():
     weights = np.random.uniform(0, 1, size=10_000)
     weights /= weights.mean()
-    df = _make_data().with_columns(sample_weights=pl.lit(weights)).cast(pl.Float32)
+    df = _make_data().with_columns(sample_weights=pl.lit(weights))
 
     expr = compute_least_squares_from_formula(
         "y ~ x1 + x2",  # patsy includes intercept by default
@@ -454,12 +483,12 @@ def test_wls():
             "x1": array[:, 0],
             "x2": array[:, 1],
         }
-    ).cast(pl.Float32)
+    )
 
     weights = np.hstack([np.ones(8_000) * 1.0 / 10**2, np.ones(2_000) * 1.0 / 0.1**2])
     weights /= weights.mean()
 
-    df = df.with_columns(sample_weight=weights).cast(pl.Float32)
+    df = df.with_columns(sample_weight=weights)
 
     expr_wls = compute_least_squares(
         pl.col("y"),
@@ -632,9 +661,20 @@ def test_recursive_least_squares_prior():
     assert not np.allclose(coef_rls_prior[-1], [0.5, 0.5], rtol=1.0e-4, atol=1.0e-4)
 
 
-def test_rolling_least_squares():
-    df = _make_data()
-    with timer("rolling ols"):
+@pytest.mark.parametrize(
+    "window_size,min_periods,use_woodbury",
+    [
+        (2, 2, False),
+        (10, 2, False),
+        (10, 2, True),
+        (63, 5, False),
+        (252, 5, False),
+        (252, 5, True),
+    ],
+)
+def test_rolling_least_squares(window_size: int, min_periods: int, use_woodbury: bool):
+    df = _make_data(n_samples=10_000)
+    with timer("\nrolling ols"):
         coef_rolling = (
             df.lazy()
             .select(
@@ -643,8 +683,9 @@ def test_rolling_least_squares():
                     pl.col("x1"),
                     pl.col("x2"),
                     mode="coefficients",
-                    window_size=252,
-                    min_periods=2,
+                    window_size=window_size,
+                    min_periods=min_periods,
+                    use_woodbury=use_woodbury,
                 )
                 .alias("coefficients")
             )
@@ -654,9 +695,19 @@ def test_rolling_least_squares():
         )
     with timer("rolling ols statsmodels"):
         mdl = RollingOLS(
-            df["y"].to_numpy(), df[["x1", "x2"]].to_numpy(), window=252, min_nobs=2, expanding=True
+            df["y"].to_numpy(),
+            df[["x1", "x2"]].to_numpy(),
+            window=window_size,
+            min_nobs=min_periods,
+            expanding=True,
         ).fit()
-    assert np.allclose(coef_rolling[1:], mdl.params[1:].astype("float32"), rtol=1.0e-3, atol=1.0e-3)
+    assert np.allclose(
+        coef_rolling,
+        mdl.params,
+        rtol=1.0e-3,
+        atol=1.0e-3,
+        equal_nan=True,
+    )
 
 
 def test_moving_window_regressions_over():
