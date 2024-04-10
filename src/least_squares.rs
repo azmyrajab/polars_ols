@@ -494,12 +494,12 @@ pub fn solve_rolling_ols(
     let alpha = alpha.unwrap_or(0.0);
 
     // we allow the user to pass a min_periods < k, but this may result in
-    // unstable warm-up coefficients. TODO: It might make sense to log a warning
-    debug_assert!(
-        min_periods >= k && min_periods < window_size,
-        "min_periods must be greater or equal to the number of regressors \
-             in the model and less than the window size"
-    );
+    // unstable warm-up coefficients - so warn the user.
+    if (min_periods >= k && min_periods <= window_size) == false {
+        println!("warning: min_periods should be greater or equal to the number of regressors \
+                  in the model and less than or equal to the window size otherwise \
+                  estimated parameters may be unstable!")
+    };
 
     // Initialize X^T X, inv(X.T X), and X^T Y
     let x_warmup = x.slice(s![..min_periods, ..]);
