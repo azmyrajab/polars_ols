@@ -116,9 +116,19 @@ class LeastSquares:
             return self.least_squares(*features, add_intercept=add_intercept, **kwargs)
 
     def predict(
-        self, *features: pl.Expr, name: Optional[str] = None, add_intercept: bool = False
+        self,
+        *features: pl.Expr,
+        name: Optional[str] = None,
+        add_intercept: bool = False,
+        null_policy: NullPolicy = "zero",
     ) -> pl.Expr:
-        return predict(self._expr, *features, add_intercept=add_intercept, name=name)
+        return predict(
+            self._expr,
+            *features,
+            add_intercept=add_intercept,
+            name=name,
+            null_policy=null_policy,
+        )
 
     def predict_from_formula(self, formula: str, name: Optional[str] = None) -> pl.Expr:
         features, add_intercept = build_expressions_from_patsy_formula(

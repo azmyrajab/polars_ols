@@ -43,7 +43,14 @@ __all__ = [
     "SolveMethod",
 ]
 
-NullPolicy = Literal["zero", "drop", "drop_y_zero_x", "ignore"]
+NullPolicy = Literal[
+    "zero",  # simply zero fills nulls in both targets & features
+    "drop",  # drops any rows with nulls in fitting and masks associated predictions with nulls
+    "ignore",  # use this option if nulls are already handled upstream
+    "drop_zero",  # drops any rows with nulls in fitting, but then computes predictions
+    # with zero filled features. Use this to allow for extrapolation.
+    "drop_y_zero_x",  # only drops rows with null targets and fill any null features with zero
+]
 OutputMode = Literal["predictions", "residuals", "coefficients"]
 SolveMethod = Literal["qr", "svd", "chol", "lu", "cd"]
 
@@ -64,8 +71,9 @@ class OLSKwargs:
         tol: Tolerance for convergence criterion. Defaults to 1.e-5.
         positive: Whether to enforce non-negativity constraints on coefficients.
             Defaults to False (no constraint on coefficients).
-        null_policy: Strategy for handling missing data ("zero", "drop", "ignore", "drop_y_zero_x").
-            Defaults to None, where a recommended default algorithm is chosen based on problem
+        null_policy: Strategy for handling missing data. Defaults to "ignore".
+        solve_method: Algorithm used for computing least squares solution.
+            Defaults to None, where a recommended default method is chosen based on problem
             specifics.
     """
 
@@ -102,7 +110,7 @@ class RLSKwargs:
                                   around mean vector of state (inversely proportional to strength
                                   of equivalent L2 penalty). Defaults to 10.
         initial_state_mean: Initial mean vector of the state. Defaults to None.
-        null_policy: Strategy for handling missing data ("zero", "drop", "ignore", "drop_y_zero_x").
+        null_policy: Strategy for handling missing data. Defaults to "ignore".
     """
 
     half_life: Optional[float] = None
@@ -124,7 +132,7 @@ class RollingKwargs:
         use_woodbury: Whether to use Woodbury matrix identity for faster computation.
                       Defaults to True if num_features > 10.
         alpha: L2 Regularization strength. Default is 0.0.
-        null_policy: Strategy for handling missing data ("zero", "drop", "drop_y_zero_x", "ignore").
+        null_policy: Strategy for handling missing data. Defaults to "ignore".
     """
 
     window_size: int = 1_000_000  # defaults to expanding OLS
@@ -410,6 +418,7 @@ def compute_least_squares_from_formula(
 def predict(
     coefficients: IntoExpr,
     *features: pl.Expr,
+    null_policy: NullPolicy = "zero",
     add_intercept: bool = False,
     name: Optional[str] = None,
 ) -> pl.Expr:
@@ -418,12 +427,14 @@ def predict(
     Args:
         coefficients: Polars expression returning a coefficients struct.
         *features: variable number of feature expressions.
+        null_policy: specifies how nulls in features are handled. Defaults to zero filling.
         add_intercept: boolean indicating if a constant should be added to features.
         name: optional str defining an alias for computed predictions expression.
 
     Returns:
         polars expression denoting computed predictions.
     """
+    assert null_policy in _VALID_NULL_POLICIES, "'null_policy' must be one of {drop, ignore, zero}"
     if add_intercept:
         if any(f.meta.output_name == "const" for f in features):
             logger.warning("feature named 'const' already detected, assuming it is the intercept")
@@ -434,5 +445,6 @@ def predict(
         plugin_path=Path(__file__).parent,
         function_name="predict",
         args=[coefficients, *(f.cast(pl.Float32) for f in features)],
+        kwargs={"null_policy": null_policy},
         is_elementwise=False,
     ).alias(name or "predictions")

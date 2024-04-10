@@ -1,14 +1,13 @@
-use std::cmp::max;
 use faer::linalg::solvers::SolverCore;
 use faer::prelude::*;
 use faer::Side;
 use faer_ext::{IntoFaer, IntoNdarray};
 use ndarray::{array, s, Array, Array1, Array2, ArrayView1, Axis, NewAxis};
+use std::cmp::max;
 use std::str::FromStr;
 
 #[cfg(target_os = "macos")]
 use ndarray_linalg::LeastSquaresSvd;
-
 
 /// Invert square matrix input using either Cholesky or LU decomposition
 pub fn inv(array: &Array2<f32>, use_cholesky: bool) -> Array2<f32> {
@@ -54,7 +53,6 @@ impl FromStr for SolveMethod {
         }
     }
 }
-
 
 /// Solves ridge regression using Singular Value Decomposition (SVD).
 ///
@@ -103,7 +101,6 @@ fn solve_ridge_svd(
     v.dot(&d_ut_y)
 }
 
-
 #[cfg(not(target_os = "macos"))]
 fn solve_ols_svd(y: &Array1<f32>, x: &Array2<f32>) -> Array1<f32> {
     // TODO: try to compute w/ LAPACK SVD. Must handle BLAS dependency on linux & windows OS
@@ -113,10 +110,10 @@ fn solve_ols_svd(y: &Array1<f32>, x: &Array2<f32>) -> Array1<f32> {
 
 #[cfg(target_os = "macos")]
 fn solve_ols_svd(y: &Array1<f32>, x: &Array2<f32>) -> Array1<f32> {
-    x.least_squares(y).expect("Failed to compute LAPACK SVD solution!").solution
+    x.least_squares(y)
+        .expect("Failed to compute LAPACK SVD solution!")
+        .solution
 }
-
-
 
 /// Solves an ordinary least squares problem using either QR (faer) or LAPACK SVD
 /// Inputs: features (2d ndarray), targets (1d ndarray), and an optional enum denoting solve method
@@ -189,7 +186,6 @@ fn solve_normal_equations(xtx: &Array2<f32>, xty: &Array1<f32>, use_cholesky: bo
         .slice(s![.., 0])
         .into_owned()
 }
-
 
 /// Solves a ridge regression problem of the form: ||y - x B|| + alpha * ||B||
 /// Inputs: features (2d ndarray), targets (1d ndarray), ridge alpha scalar

@@ -14,7 +14,7 @@ from polars_ols import (
     compute_least_squares,
     compute_least_squares_from_formula,
 )
-from polars_ols.least_squares import SolveMethod
+from polars_ols.least_squares import NullPolicy, SolveMethod
 
 
 @contextmanager
@@ -139,7 +139,8 @@ def test_fit_missing_data_coefficients():
     )
 
 
-def test_fit_missing_data_predictions_and_residuals():
+@pytest.mark.parametrize("null_policy", ["drop", "drop_zero", "drop_y_zero_x"])
+def test_fit_missing_data_predictions_and_residuals(null_policy: NullPolicy):
     df = _make_data()
     rng = np.random.default_rng(0)
 
@@ -159,36 +160,59 @@ def test_fit_missing_data_predictions_and_residuals():
         )  # notice implicit null -> nan converting to numpy
 
         # 1) compute mask, drop invalid rows, compute coefficients
-        is_valid = ~np.isnan(x).any(axis=1) & ~np.isnan(y)
-        x_fit, y_fit = x[is_valid, :], y[is_valid]
+        if null_policy == "drop_y_zero_x":
+            # drop_y will only drop rows based on the target
+            is_valid = ~np.isnan(y)
+            x_fit, y_fit = np.nan_to_num(x[is_valid, :]), y[is_valid]
+        else:
+            # drop or drop_zero will drop any invalid row in fitting
+            is_valid = ~np.isnan(x).any(axis=1) & ~np.isnan(y)
+            x_fit, y_fit = x[is_valid, :], y[is_valid]
+
         coef = np.linalg.lstsq(x_fit, y_fit, rcond=None)[0]
 
-        # in order to broadcast (valid) predictions to the dimensions of original data; we must
-        # use the original (un-dropped) x. most reasonable behaviour for linear models is:
-        # a) always produce predictions, even for cases where target was null
-        # (allows extrapolation) &
-        # b) for residuals, by default, one wants to retain nulls of targets
-        # Thus the logic below:
+        # in order to broadcast (valid) predictions/residuals to the dimensions of original data; we
+        # use the original (un-dropped) x for computing predictions.
+        # The behaviours which are provided for handling nulls in prediction context:
+        # a) null_policy="drop": ensure predictions are always masked to null
+        #                        if any feature or target is null.
+        # b) null_policy="drop_zero": using coefficients estimated from dropped data, always produce
+        #                             valid predictions by zero filling features
+        #                             (this allows extrapolation).
+        # c) null_policy="drop_y_zero_x": similar to "drop_zero" but where coefficients have been
+        #                                 estimated based on the validity of y alone.
         is_nan_x = np.isnan(x)
         x_predict = x.copy()
         x_predict[is_nan_x] = 0.0  # fill x nans with zero
         predictions_expected = x_predict @ coef
+
+        # if user selected "drop" ensure that predictions are masked based on
+        # validity of both features & targets.
+        if null_policy == "drop":
+            predictions_expected[~is_valid] = np.nan
+        # otherwise, if "drop_zero" / "drop_y_zero_x", compute predictions based on zero-filled
+        # features which allows extrapolation.
+
     with timer("polars-ols w/ null_policy", precision=5):
         predictions = df.select(
             predictions=pl.col("y").least_squares.ols(
-                pl.col("x1"), pl.col("x2"), null_policy="drop", mode="predictions"
+                pl.col("x1"), pl.col("x2"), null_policy=null_policy, mode="predictions"
             )
         )
 
     assert np.allclose(
-        predictions.to_numpy().flatten(), predictions_expected.flatten(), rtol=1.0e-4, atol=1.0e-4
+        predictions.to_numpy().flatten(),
+        predictions_expected.flatten(),
+        rtol=1.0e-4,
+        atol=1.0e-4,
+        equal_nan=True,
     )
 
     # check residuals logic
     residuals_expected = y - predictions_expected  # no need to copy y
     residuals = df.select(
         residuals=pl.col("y").least_squares.ols(
-            pl.col("x1"), pl.col("x2"), null_policy="drop", mode="residuals"
+            pl.col("x1"), pl.col("x2"), null_policy=null_policy, mode="residuals"
         )
     )
     assert np.allclose(
@@ -717,7 +741,10 @@ def test_predict():
         .join(df_coefficients, on="group")
         .select(
             pl.col("coefficients").least_squares.predict(
-                pl.col("x1"), pl.col("x2"), name="predictions"
+                pl.col("x1"),
+                pl.col("x2"),
+                name="predictions",
+                null_policy="zero",
             )
         )
         .collect()
