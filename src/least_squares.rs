@@ -368,7 +368,7 @@ pub fn solve_recursive_least_squares(
     half_life: Option<f64>,
     initial_state_covariance: Option<f64>,
     initial_state_mean: Option<Array1<f64>>,
-    is_valid: &Vec<bool>,
+    is_valid: &[bool],
 ) -> Array2<f64> {
     let (n_samples, n_features) = (x.shape()[0], x.shape()[1]);
     let mut recursive_least_squares = RecursiveLeastSquares::new(
@@ -499,9 +499,11 @@ pub fn solve_rolling_ols(
     // we allow the user to pass a min_periods < k, but this may result in
     // unstable warm-up coefficients - so warn the user.
     if !(min_periods >= k && min_periods <= window_size) {
-        println!("warning: min_periods should be greater or equal to the number of regressors \
+        println!(
+            "warning: min_periods should be greater or equal to the number of regressors \
                   in the model and less than or equal to the window size otherwise \
-                  estimated parameters may be unstable!")
+                  estimated parameters may be unstable!"
+        )
     };
 
     // Initialize X^T X, inv(X.T X), and X^T Y
