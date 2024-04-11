@@ -6,7 +6,7 @@ use ndarray::{array, s, Array, Array1, Array2, ArrayView1, Axis, NewAxis};
 use std::cmp::max;
 use std::str::FromStr;
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use ndarray_linalg::LeastSquaresSvd;
 
 /// Invert square matrix input using either Cholesky or LU decomposition
@@ -101,14 +101,14 @@ fn solve_ridge_svd(
     v.dot(&d_ut_y)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1<f64> {
     // TODO: try to compute w/ LAPACK SVD. Must handle BLAS dependency on linux & windows OS
     //      either use ndarray-linalg or directly call sgelsd from lapack crate..
     solve_ridge_svd(y, x, 1.0e-64, rcond) // near zero ridge penalty
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[allow(unused_variables)]
 fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1<f64> {
     x.least_squares(y)
@@ -368,6 +368,7 @@ pub fn solve_recursive_least_squares(
     half_life: Option<f64>,
     initial_state_covariance: Option<f64>,
     initial_state_mean: Option<Array1<f64>>,
+    is_valid: &Vec<bool>,
 ) -> Array2<f64> {
     let (n_samples, n_features) = (x.shape()[0], x.shape()[1]);
     let mut recursive_least_squares = RecursiveLeastSquares::new(
@@ -382,7 +383,9 @@ pub fn solve_recursive_least_squares(
     for t in 0..n_samples {
         let y_t = y[t];
         let x_t = x.slice(s![t, ..]).to_owned();
-        recursive_least_squares.update(&x_t, y_t);
+        if is_valid[t] {
+            recursive_least_squares.update(&x_t, y_t);
+        }
         coefficients
             .slice_mut(s![t, ..])
             .assign(&recursive_least_squares.coef.view());

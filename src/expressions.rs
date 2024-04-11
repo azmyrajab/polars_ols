@@ -392,11 +392,18 @@ fn recursive_least_squares_coefficients(
     kwargs: RLSKwargs,
 ) -> PolarsResult<Series> {
     let null_policy = kwargs.get_null_policy();
-    assert!(
-        matches!(null_policy, NullPolicy::Ignore | NullPolicy::Zero),
-        "null policies which drop rows are not yet supported for RLS"
-    );
-    let (y, x) = convert_polars_to_ndarray(inputs, &null_policy, None);
+    let is_valid = compute_is_valid_mask(inputs, &null_policy);
+
+    let is_valid = if let Some(boolean_chunked) = is_valid {
+        boolean_chunked
+            .iter()
+            .map(|opt_bool| opt_bool.unwrap_or(false))
+            .collect()
+    } else {
+        vec![true; inputs[0].len()]
+    };
+
+    let (y, x) = convert_polars_to_ndarray(inputs, &NullPolicy::Zero, None);
     let initial_state_mean = convert_option_vec_to_array1(kwargs.initial_state_mean);
     let coefficients = solve_recursive_least_squares(
         &y,
@@ -404,6 +411,7 @@ fn recursive_least_squares_coefficients(
         kwargs.half_life,
         kwargs.initial_state_covariance,
         initial_state_mean,
+        &is_valid,
     );
     let series = coefficients_to_struct_series(&coefficients);
     Ok(series.with_name("coefficients"))
@@ -412,17 +420,25 @@ fn recursive_least_squares_coefficients(
 #[polars_expr(output_type=Float64)]
 fn recursive_least_squares(inputs: &[Series], kwargs: RLSKwargs) -> PolarsResult<Series> {
     let null_policy = kwargs.get_null_policy();
-    assert!(
-        matches!(null_policy, NullPolicy::Ignore | NullPolicy::Zero),
-        "null policies which drop rows are not yet supported for RLS"
-    );
-    let (y, x) = convert_polars_to_ndarray(inputs, &null_policy, None);
+    let is_valid = compute_is_valid_mask(inputs, &null_policy);
+
+    let is_valid = if let Some(boolean_chunked) = is_valid {
+        boolean_chunked
+            .iter()
+            .map(|opt_bool| opt_bool.unwrap_or(false))
+            .collect()
+    } else {
+        vec![true; inputs[0].len()]
+    };
+
+    let (y, x) = convert_polars_to_ndarray(inputs, &NullPolicy::Zero, None);
     let coefficients = solve_recursive_least_squares(
         &y,
         &x,
         kwargs.half_life,
         kwargs.initial_state_covariance,
         None,
+        &is_valid,
     );
     let predictions = (&x * &coefficients).sum_axis(Axis(1));
     Ok(Series::from_vec(inputs[0].name(), predictions.to_vec()))

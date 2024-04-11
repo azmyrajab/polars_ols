@@ -589,6 +589,14 @@ def test_elastic_net_non_negative():
 
 def test_recursive_least_squares():
     df = _make_data()
+    rng = np.random.default_rng(0)
+
+    def insert_nulls(val):
+        return None if rng.random() < 0.1 else val
+
+    df = df.with_columns(
+        *(pl.col(c).map_elements(insert_nulls, return_dtype=pl.Float64) for c in df.columns)
+    )
 
     # expanding OLS
     coef_rls = (
@@ -603,6 +611,7 @@ def test_recursive_least_squares():
                 half_life=None,
                 # arbitrarily weak L2 (diffuse) prior
                 initial_state_covariance=1_000_000.0,
+                null_policy="drop",
             )
             .alias("coefficients")
         )
@@ -616,7 +625,7 @@ def test_recursive_least_squares():
         df.lazy()
         .select(
             pl.col("y")
-            .least_squares.ols(pl.col("x1"), pl.col("x2"), mode="coefficients")
+            .least_squares.ols(pl.col("x1"), pl.col("x2"), mode="coefficients", null_policy="drop")
             .alias("coefficients")
         )
         .unnest("coefficients")

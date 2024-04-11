@@ -20,22 +20,15 @@ approx = {version = "*" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
+ndarray = { version = "*", features = ["matrixmultiply-threading"]}
+ndarray-linalg = {version = "*", features = ["intel-mkl"]}
 
 [target.'cfg(target_os = "macos")'.dependencies]
 ndarray = { version = "*", features = ["blas"]}
 ndarray-linalg = { version = "*" }
 
-# Note: BLAS is only supported by default for macOS because it is difficult for this package
-# to detect it and handle system dependencies across all other operating systems and platforms easily.
-# If you are reading this, and:
-# 1) are not using macOS
-# 2) would like further speed up
-# 3) have access to OpenBLAS or Intel MKL, etc. on your system
-# Modify the lines below, replacing "matrixmultiply-threading" with "blas".
-# You may need to specify the additional dependency blas-src. See https://github.com/blas-lapack-rs/blas-src.
-# e.g. by adding 'openblas-src = {version = "*", features = ["system"]}'.
-[target.'cfg(not(target_os = "macos"))'.dependencies]
-ndarray = { version = "*", features = ["matrixmultiply-threading"]}
+[target.'cfg(not(any(target_os = "macos", target_os = "linux")))'.dependencies]
+ndarray = { version = "*", features = ["matrixmultiply-threading"]}  # i.e. windows
 
 [dev-dependencies]
 ndarray-linalg = {version = "*"}
