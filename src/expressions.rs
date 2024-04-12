@@ -117,7 +117,7 @@ fn coefficients_to_struct_series(coefficients: &Array2<f64>, feature_names: &[&s
                     feature_names[i]
                 };
 
-                Series::from_vec(&name, col.to_vec())
+                Series::from_vec(name, col.to_vec())
             })
             .collect::<Vec<Series>>(),
     )
