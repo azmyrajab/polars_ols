@@ -19,10 +19,9 @@ num-traits = { version = "*" }
 approx = {version = "*" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-openssl = { version = "*", features = ["vendored"] }
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 ndarray = { version = "*", features = ["blas"]}
-ndarray-linalg = {version = "*", features = ["intel-mkl"]}
+ndarray-linalg = {version = "*", features = ["openblas"]}  # intel-mkl
 
 [target.'cfg(target_os = "macos")'.dependencies]
 ndarray = { version = "*", features = ["blas"]}
