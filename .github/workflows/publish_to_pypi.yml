@@ -86,12 +86,21 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        target: [x86_64]  # x86, aarch64, armv7 TODO: add this back
+        target: [x86_64, x86, aarch64, armv7]
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
+      - name: Set up Spack and install OpenBLAS, pkg-config, and OpenSSL
+        uses: spack/setup-spack@v2
+        with:
+          ref: develop
+          buildcache: true
+          color: true
+          path: spack
+      - name: Install OpenBLAS, pkg-config, and OpenSSL
+        run: spack install openblas pkg-config openssl
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
