@@ -168,7 +168,7 @@ def _pre_process_data(
         Tuple containing the pre-processed target, features, and sample weights.
     """
     target = parse_into_expr(target).cast(pl.Float64)
-    features = [f.cast(pl.Float64) for f in features]
+    features = [parse_into_expr(f).cast(pl.Float64) for f in features]
     # handle intercept
     if add_intercept:
         if any(f.meta.output_name == "const" for f in features):
@@ -229,6 +229,7 @@ def compute_least_squares(
                 is_elementwise=False,
                 changes_length=True,
                 returns_scalar=True,
+                input_wildcard_expansion=True,
             )
             .alias("coefficients")
             .struct.rename_fields([f.meta.output_name() for f in features])
@@ -241,6 +242,7 @@ def compute_least_squares(
                 args=[target, *features],
                 kwargs=ols_kwargs.to_dict(),
                 is_elementwise=False,
+                input_wildcard_expansion=True,
             )
             / sqrt_w
         )  # undo the sqrt(w) scaling implicit in predictions
@@ -293,6 +295,7 @@ def compute_recursive_least_squares(
                 args=[target, *features],
                 kwargs=rls_kwargs.to_dict(),
                 is_elementwise=False,
+                input_wildcard_expansion=True,
             )
             .alias("coefficients")
             .struct.rename_fields([f.meta.output_name() for f in features])
@@ -305,6 +308,7 @@ def compute_recursive_least_squares(
                 args=[target, *features],
                 kwargs=rls_kwargs.to_dict(),
                 is_elementwise=False,
+                input_wildcard_expansion=True,
             )
             / sqrt_w
         )  # undo the sqrt(w) scaling implicit in predictions
@@ -354,6 +358,7 @@ def compute_rolling_least_squares(
                 args=[target, *features],
                 kwargs=rolling_kwargs.to_dict(),
                 is_elementwise=False,
+                input_wildcard_expansion=True,
             )
             .alias("coefficients")
             .struct.rename_fields([f.meta.output_name() for f in features])
@@ -366,6 +371,7 @@ def compute_rolling_least_squares(
                 args=[target, *features],
                 kwargs=rolling_kwargs.to_dict(),
                 is_elementwise=False,
+                input_wildcard_expansion=True,
             )
             / sqrt_w
         )  # undo the sqrt(w) scaling implicit in predictions
@@ -451,4 +457,5 @@ def predict(
         args=[coefficients, *(f.cast(pl.Float64) for f in features)],
         kwargs={"null_policy": null_policy},
         is_elementwise=False,
+        input_wildcard_expansion=True,
     ).alias(name or "predictions")
