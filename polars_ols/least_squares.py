@@ -16,10 +16,10 @@ from typing import (
     get_args,
 )
 
-import polars as pl
 from polars.plugins import register_plugin_function
 
 if TYPE_CHECKING:
+    import polars as pl
     from polars.type_aliases import IntoExpr
 
 from polars_ols.utils import build_expressions_from_patsy_formula, parse_into_expr
@@ -60,7 +60,21 @@ _VALID_SOLVE_METHODS: Set[SolveMethod] = set(get_args(SolveMethod)).union({None}
 
 
 @dataclass
-class OLSKwargs:
+class Kwargs:
+    null_policy: NullPolicy = "ignore"
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    def __post_init__(self):
+        # rust code does validate all options, but prefer to fail, on some, early
+        assert (
+            self.null_policy in _VALID_NULL_POLICIES
+        ), f"'null_policy' must be one of {_VALID_NULL_POLICIES}. You passed: {self.null_policy}"
+
+
+@dataclass
+class OLSKwargs(Kwargs):
     """Specifies parameters relevant for regularized linear models: LASSO / Ridge / ElasticNet.
 
     Attributes:
@@ -85,12 +99,8 @@ class OLSKwargs:
     max_iter: Optional[int] = 1_000
     tol: Optional[float] = 1.0e-5
     positive: Optional[bool] = False  # if True, imposes non-negativity constraint on coefficients
-    null_policy: NullPolicy = "ignore"
     solve_method: Optional[SolveMethod] = None
     rcond: Optional[float] = None
-
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
 
     def __post_init__(self):
         # rust code does validate all options, but prefer to fail, on some, early
@@ -103,7 +113,7 @@ class OLSKwargs:
 
 
 @dataclass
-class RLSKwargs:
+class RLSKwargs(Kwargs):
     """Specifies parameters of Recursive Least Squares models.
 
     Attributes:
@@ -114,20 +124,23 @@ class RLSKwargs:
                                   around mean vector of state (inversely proportional to strength
                                   of equivalent L2 penalty). Defaults to 10.
         initial_state_mean: Initial mean vector of the state. Defaults to None.
-        null_policy: Strategy for handling missing data. Defaults to "ignore".
+        null_policy: Strategy for handling missing data. Defaults to "drop".
     """
 
     half_life: Optional[float] = None
     initial_state_covariance: Optional[float] = 10.0
     initial_state_mean: Union[Optional[List[float], float]] = None
-    null_policy: NullPolicy = "ignore"
+    null_policy: NullPolicy = "drop"
 
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+    def __post_init__(self):
+        # rust code does validate all options, but prefer to fail, on some, early
+        assert (
+            self.null_policy in _VALID_NULL_POLICIES
+        ), f"'null_policy' must be one of {_VALID_NULL_POLICIES}. You passed: {self.null_policy}"
 
 
 @dataclass
-class RollingKwargs:
+class RollingKwargs(Kwargs):
     """Specifies parameters of Rolling OLS model.
 
     Attributes:
@@ -143,10 +156,6 @@ class RollingKwargs:
     min_periods: Optional[int] = None
     use_woodbury: Optional[bool] = None
     alpha: Optional[float] = None  # optional ridge alpha
-    null_policy: NullPolicy = "ignore"
-
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
 
 
 def _pre_process_data(
@@ -155,8 +164,8 @@ def _pre_process_data(
     sample_weights: Optional[pl.Expr],
     add_intercept: bool,
 ):
-    """Pre-processes the input data by casting it to float64 and scaling it with sample weights if
-     provided.
+    """Pre-processes the input data by adding an intercept to features and applying sample weights,
+    if specified.
 
     Args:
         target: The target expression.
@@ -167,21 +176,69 @@ def _pre_process_data(
     Returns:
         Tuple containing the pre-processed target, features, and sample weights.
     """
-    target = parse_into_expr(target).cast(pl.Float64)
-    features = [parse_into_expr(f).cast(pl.Float64) for f in features]
+    target = parse_into_expr(target)
+    features = [parse_into_expr(f) for f in features]
     # handle intercept
     if add_intercept:
         if any(f.meta.output_name == "const" for f in features):
             logger.info("feature named 'const' already detected, assuming it is an intercept")
         else:
-            features.append(target.fill_null(0.0).mul(0.0).add(1.0).alias("const").cast(pl.Float64))
+            features.append(target.fill_null(0.0).mul(0.0).add(1.0).alias("const"))
     # handle sample weights
-    sqrt_w = 1.0
+    sqrt_w: Optional[float] = None
     if sample_weights is not None:
-        sqrt_w = sample_weights.sqrt().cast(pl.Float64)
+        sqrt_w = sample_weights.sqrt()
         target *= sqrt_w
-        features = [(expr * sqrt_w).cast(pl.Float64) for expr in features]
-    return target.cast(pl.Float64), features, sqrt_w
+        features = [(expr * sqrt_w) for expr in features]
+    return target, features, sqrt_w
+
+
+def _register_least_squares_plugin(
+    target: pl.Expr,
+    *features: pl.Expr,
+    mode: OutputMode,
+    function_name: str,
+    ols_kwargs: Kwargs,
+    returns_scalar_coefficients: bool = False,
+    **kwargs,
+):
+    # pre-process features and targets prior to fitting
+    target = parse_into_expr(target)
+    target_fit, features_fit, sqrt_w = _pre_process_data(target, *features, **kwargs)
+
+    # register either coefficient or prediction plugin functions
+    if mode == "coefficients":
+        # TODO: remove 'rename_fields' after https://github.com/pola-rs/pyo3-polars/issues/79
+        #  it currently breaks input_wildcard_expansion=True correctly returning a struct.
+        return (
+            register_plugin_function(
+                plugin_path=Path(__file__).parent,
+                function_name=f"{function_name}_coefficients",
+                args=[target_fit, *features_fit],
+                kwargs=ols_kwargs.to_dict(),
+                is_elementwise=False,
+                changes_length=returns_scalar_coefficients,
+                returns_scalar=returns_scalar_coefficients,
+                input_wildcard_expansion=True,
+            )
+            .alias("coefficients")
+            .struct.rename_fields([f.meta.output_name() for f in features_fit])
+        )
+    else:
+        predictions = register_plugin_function(
+            plugin_path=Path(__file__).parent,
+            function_name=function_name,
+            args=[target_fit, *features_fit],
+            kwargs=ols_kwargs.to_dict(),
+            is_elementwise=False,
+            input_wildcard_expansion=True,
+        )
+        if sqrt_w is not None:
+            predictions /= sqrt_w  # undo the scaling implicit in WLS weighting
+        if mode == "predictions":
+            return predictions
+        else:
+            return target - predictions
 
 
 def compute_least_squares(
@@ -209,47 +266,18 @@ def compute_least_squares(
         Resulting expression based on the chosen mode.
     """
     assert mode in _VALID_OUTPUT_MODES, f"'mode' must be one of {_VALID_OUTPUT_MODES}"
-    target, features, sqrt_w = _pre_process_data(
+    ols_kwargs: OLSKwargs = ols_kwargs or OLSKwargs()
+    # register either coefficient or prediction plugin functions
+    return _register_least_squares_plugin(
         target,
         *features,
+        mode=mode,
+        function_name="least_squares",
+        ols_kwargs=ols_kwargs,
         sample_weights=sample_weights,
         add_intercept=add_intercept,
+        returns_scalar_coefficients=True,
     )
-
-    ols_kwargs: OLSKwargs = ols_kwargs or OLSKwargs()
-
-    # register either coefficient or prediction plugin functions
-    if mode == "coefficients":
-        return (
-            register_plugin_function(
-                plugin_path=Path(__file__).parent,
-                function_name="least_squares_coefficients",
-                args=[target, *features],
-                kwargs=ols_kwargs.to_dict(),
-                is_elementwise=False,
-                changes_length=True,
-                returns_scalar=True,
-                input_wildcard_expansion=True,
-            )
-            .alias("coefficients")
-            .struct.rename_fields([f.meta.output_name() for f in features])
-        )
-    else:
-        predictions = (
-            register_plugin_function(
-                plugin_path=Path(__file__).parent,
-                function_name="least_squares",
-                args=[target, *features],
-                kwargs=ols_kwargs.to_dict(),
-                is_elementwise=False,
-                input_wildcard_expansion=True,
-            )
-            / sqrt_w
-        )  # undo the sqrt(w) scaling implicit in predictions
-        if mode == "predictions":
-            return predictions
-        else:
-            return target / sqrt_w - predictions
 
 
 def compute_recursive_least_squares(
@@ -278,44 +306,17 @@ def compute_recursive_least_squares(
         Resulting expression based on the chosen mode.
     """
     assert mode in _VALID_OUTPUT_MODES, f"'mode' must be one of {_VALID_OUTPUT_MODES}"
-    target, features, sqrt_w = _pre_process_data(
+    rls_kwargs: RLSKwargs = rls_kwargs or RLSKwargs()
+    # register either coefficient or prediction plugin functions
+    return _register_least_squares_plugin(
         target,
         *features,
+        mode=mode,
+        function_name="recursive_least_squares",
+        ols_kwargs=rls_kwargs,
         sample_weights=sample_weights,
         add_intercept=add_intercept,
     )
-    rls_kwargs: RLSKwargs = rls_kwargs or RLSKwargs()
-
-    # register either coefficient or prediction plugin functions
-    if mode == "coefficients":
-        return (
-            register_plugin_function(
-                plugin_path=Path(__file__).parent,
-                function_name="recursive_least_squares_coefficients",
-                args=[target, *features],
-                kwargs=rls_kwargs.to_dict(),
-                is_elementwise=False,
-                input_wildcard_expansion=True,
-            )
-            .alias("coefficients")
-            .struct.rename_fields([f.meta.output_name() for f in features])
-        )
-    else:
-        predictions = (
-            register_plugin_function(
-                plugin_path=Path(__file__).parent,
-                function_name="recursive_least_squares",
-                args=[target, *features],
-                kwargs=rls_kwargs.to_dict(),
-                is_elementwise=False,
-                input_wildcard_expansion=True,
-            )
-            / sqrt_w
-        )  # undo the sqrt(w) scaling implicit in predictions
-        if mode == "predictions":
-            return predictions
-        else:
-            return target / sqrt_w - predictions
 
 
 def compute_rolling_least_squares(
@@ -341,44 +342,17 @@ def compute_rolling_least_squares(
         Resulting expression based on the chosen mode.
     """
     assert mode in _VALID_OUTPUT_MODES, f"'mode' must be one of {_VALID_OUTPUT_MODES}"
-    target, features, sqrt_w = _pre_process_data(
+    rolling_kwargs: RollingKwargs = rolling_kwargs or RollingKwargs()
+    # register either coefficient or prediction plugin functions
+    return _register_least_squares_plugin(
         target,
         *features,
+        mode=mode,
+        function_name="rolling_least_squares",
+        ols_kwargs=rolling_kwargs,
         sample_weights=sample_weights,
         add_intercept=add_intercept,
     )
-    rolling_kwargs: RollingKwargs = rolling_kwargs or RollingKwargs()
-
-    # register either coefficient or prediction plugin functions
-    if mode == "coefficients":
-        return (
-            register_plugin_function(
-                plugin_path=Path(__file__).parent,
-                function_name="rolling_least_squares_coefficients",
-                args=[target, *features],
-                kwargs=rolling_kwargs.to_dict(),
-                is_elementwise=False,
-                input_wildcard_expansion=True,
-            )
-            .alias("coefficients")
-            .struct.rename_fields([f.meta.output_name() for f in features])
-        )
-    else:
-        predictions = (
-            register_plugin_function(
-                plugin_path=Path(__file__).parent,
-                function_name="rolling_least_squares",
-                args=[target, *features],
-                kwargs=rolling_kwargs.to_dict(),
-                is_elementwise=False,
-                input_wildcard_expansion=True,
-            )
-            / sqrt_w
-        )  # undo the sqrt(w) scaling implicit in predictions
-        if mode == "predictions":
-            return predictions
-        else:
-            return target / sqrt_w - predictions
 
 
 def compute_least_squares_from_formula(
@@ -404,7 +378,6 @@ def compute_least_squares_from_formula(
     expressions, add_intercept = build_expressions_from_patsy_formula(
         formula, include_dependent_variable=True
     )
-
     # resolve additional kwargs and relevant ols compute function
     if kwargs.get("half_life"):
         rls_kwargs: RLSKwargs = RLSKwargs(**kwargs)
@@ -450,12 +423,19 @@ def predict(
             logger.warning("feature named 'const' already detected, assuming it is the intercept")
         else:
             features += (features[-1].fill_null(0.0).mul(0.0).add(1.0).alias("const"),)
-
     return register_plugin_function(
         plugin_path=Path(__file__).parent,
         function_name="predict",
-        args=[coefficients, *(f.cast(pl.Float64) for f in features)],
+        args=[coefficients, *features],
         kwargs={"null_policy": null_policy},
         is_elementwise=False,
         input_wildcard_expansion=True,
     ).alias(name or "predictions")
+
+
+def convert_series_to_struct(*inputs: pl.Expr) -> pl.Expr:
+    return register_plugin_function(
+        plugin_path=Path(__file__).parent,
+        function_name="inputs_to_struct",
+        args=inputs,
+    )

@@ -27,18 +27,27 @@ fn construct_features_array(inputs: &[Series], fill_zero: bool) -> Array2<f64> {
         .for_each(|(j, mut col)| {
             if fill_zero {
                 // Convert Series to ndarray
-                let filled = inputs[j].fill_null(FillNullStrategy::Zero).unwrap();
+                let filled = inputs[j]
+                    .cast(&DataType::Float64)
+                    .expect("failed to cast inputs to f64")
+                    .fill_null(FillNullStrategy::Zero)
+                    .unwrap();
                 let s = filled
                     .f64()
-                    .expect("Failed to convert polars series to f64 array")
+                    .unwrap()
+                    // .expect("Failed to convert polars series to f64 array")
                     .to_ndarray()
                     .expect("Failed to convert f64 series to ndarray");
                 col.assign(&s);
             } else {
-                // Convert Series to ndarray
                 let s = inputs[j]
+                    .cast(&DataType::Float64)
+                    .expect("failed to cast inputs to f64");
+                // Convert Series to ndarray
+                let s = s
                     .f64()
-                    .expect("Failed to convert polars series to f64 array")
+                    .unwrap()
+                    // .expect("Failed to convert polars series to f64 array")
                     .to_ndarray()
                     .expect("Failed to convert f64 series to ndarray");
                 col.assign(&s);
@@ -62,6 +71,9 @@ pub fn convert_polars_to_ndarray(
 
     // prepare targets & features ndarrays. assume first series is targets and rest are features.
     let y = filtered_inputs[0]
+        .cast(&DataType::Float64)
+        .expect("Failed to cast targets series to f64");
+    let y = y
         .f64()
         .expect("Failed to convert polars series to f64 array")
         .to_ndarray()
@@ -89,13 +101,24 @@ fn coefficients_struct_dtype(input_fields: &[Field]) -> PolarsResult<Field> {
 }
 
 /// Convert the coefficients into a Polars series of struct dtype.
-fn coefficients_to_struct_series(coefficients: &Array2<f64>) -> Series {
+fn coefficients_to_struct_series(coefficients: &Array2<f64>, feature_names: &[&str]) -> Series {
     // Convert 2D ndarray into DataFrame
     let df: DataFrame = DataFrame::new(
         coefficients
             .axis_iter(Axis(1))
             .enumerate()
-            .map(|(i, col)| Series::from_vec(&i.to_string(), col.to_vec()))
+            .map(|(i, col)| {
+                // TODO: clean below up once https://github.com/pola-rs/pyo3-polars/issues/79
+                //  is resolved
+                let i_str = i.to_string();
+                let name = if feature_names[i].is_empty() {
+                    i_str.as_ref()
+                } else {
+                    feature_names[i]
+                };
+
+                Series::from_vec(&name, col.to_vec())
+            })
             .collect::<Vec<Series>>(),
     )
     .unwrap();
@@ -188,6 +211,18 @@ fn compute_is_valid_mask(inputs: &[Series], null_policy: &NullPolicy) -> Option<
         // Compute non-null mask based on the first input series (i.e. targets)
         NullPolicy::DropYZeroX => Some(inputs[0].is_not_null()),
         _ => None,
+    }
+}
+
+fn compute_is_valid_mask_vec(inputs: &[Series], null_policy: &NullPolicy) -> Vec<bool> {
+    let is_valid = compute_is_valid_mask(inputs, null_policy);
+    if let Some(boolean_chunked) = is_valid {
+        boolean_chunked
+            .iter()
+            .map(|opt_bool| opt_bool.unwrap_or(false))
+            .collect()
+    } else {
+        vec![true; inputs[0].len()]
     }
 }
 
@@ -381,8 +416,14 @@ fn least_squares_coefficients(inputs: &[Series], kwargs: OLSKwargs) -> PolarsRes
     let (y, x) = convert_polars_to_ndarray(inputs, &null_policy, is_valid.as_ref());
     // force into 1 x K 2-d array, so that we can return a series of struct
     let coefficients = _get_least_squares_coefficients(&y, &x, kwargs).insert_axis(Axis(0));
-    // let series = coefficients_to_series_list(&coefficients);
-    let series = coefficients_to_struct_series(&coefficients);
+    // convert coefficients to a polars struct
+    let feature_names: Vec<&str> = inputs[1..].iter().map(|input| input.name()).collect();
+    assert_eq!(
+        feature_names.len(),
+        coefficients.len_of(Axis(1)),
+        "number of coefficients must match number of features!"
+    );
+    let series = coefficients_to_struct_series(&coefficients, &feature_names);
     Ok(series.with_name("coefficients"))
 }
 
@@ -392,17 +433,7 @@ fn recursive_least_squares_coefficients(
     kwargs: RLSKwargs,
 ) -> PolarsResult<Series> {
     let null_policy = kwargs.get_null_policy();
-    let is_valid = compute_is_valid_mask(inputs, &null_policy);
-
-    let is_valid = if let Some(boolean_chunked) = is_valid {
-        boolean_chunked
-            .iter()
-            .map(|opt_bool| opt_bool.unwrap_or(false))
-            .collect()
-    } else {
-        vec![true; inputs[0].len()]
-    };
-
+    let is_valid = compute_is_valid_mask_vec(inputs, &null_policy);
     let (y, x) = convert_polars_to_ndarray(inputs, &NullPolicy::Zero, None);
     let initial_state_mean = convert_option_vec_to_array1(kwargs.initial_state_mean);
     let coefficients = solve_recursive_least_squares(
@@ -413,24 +444,21 @@ fn recursive_least_squares_coefficients(
         initial_state_mean,
         &is_valid,
     );
-    let series = coefficients_to_struct_series(&coefficients);
+    // convert coefficients to a polars struct
+    let feature_names: Vec<&str> = inputs[1..].iter().map(|input| input.name()).collect();
+    assert_eq!(
+        feature_names.len(),
+        coefficients.len_of(Axis(1)),
+        "number of coefficients must match number of features!"
+    );
+    let series = coefficients_to_struct_series(&coefficients, &feature_names);
     Ok(series.with_name("coefficients"))
 }
 
 #[polars_expr(output_type=Float64)]
 fn recursive_least_squares(inputs: &[Series], kwargs: RLSKwargs) -> PolarsResult<Series> {
     let null_policy = kwargs.get_null_policy();
-    let is_valid = compute_is_valid_mask(inputs, &null_policy);
-
-    let is_valid = if let Some(boolean_chunked) = is_valid {
-        boolean_chunked
-            .iter()
-            .map(|opt_bool| opt_bool.unwrap_or(false))
-            .collect()
-    } else {
-        vec![true; inputs[0].len()]
-    };
-
+    let is_valid = compute_is_valid_mask_vec(inputs, &null_policy);
     let (y, x) = convert_polars_to_ndarray(inputs, &NullPolicy::Zero, None);
     let coefficients = solve_recursive_least_squares(
         &y,
@@ -463,7 +491,14 @@ fn rolling_least_squares_coefficients(
         kwargs.use_woodbury,
         kwargs.alpha,
     );
-    let series = coefficients_to_struct_series(&coefficients);
+    // convert coefficients to a polars struct
+    let feature_names: Vec<&str> = inputs[1..].iter().map(|input| input.name()).collect();
+    assert_eq!(
+        feature_names.len(),
+        coefficients.len_of(Axis(1)),
+        "number of coefficients must match number of features!"
+    );
+    let series = coefficients_to_struct_series(&coefficients, &feature_names);
     Ok(series.with_name("coefficients"))
 }
 
@@ -500,6 +535,13 @@ fn predict(inputs: &[Series], kwargs: PredictKwargs) -> PolarsResult<Series> {
         .expect("the first input series to predict function must be of dtype struct!")
         .clone()
         .unnest();
+
+    assert_eq!(
+        coefficients_df.shape().1,
+        inputs[1..].len(),
+        "number of coefficients must match number of features!"
+    );
+
     // compute predictions assuming zero filled features
     let features = construct_features_array(&inputs[1..], null_policy != NullPolicy::Ignore);
     let coefficients: Array2<f64> = coefficients_df

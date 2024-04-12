@@ -359,6 +359,7 @@ impl RecursiveLeastSquares {
 ///                                 matrix of the state estimation. Default value is 10.0.
 /// * `initial_state_mean` - An optional parameter representing the initial mean vector of the
 ///                           state estimation. If not provided, it is initialized to zeros.
+/// * `is_valid` - A slice of booleans indicating if each sample is valid.
 ///
 /// # Returns
 /// A two-dimensional array containing the updated coefficients of the linear regression model.
@@ -479,6 +480,7 @@ pub fn update_xtx_inv(
 ///                   required to calculate coefficients. If not provided, it defaults to 1.
 /// * `use_woodbury` - An optional parameter specifying whether to use Woodbury matrix identity
 ///                    which propagates inv(XTX) directly. If not provided, it defaults to `false`.
+/// * `alpha` - An optional L2 regularization parameter. Defaults to 0.
 ///
 pub fn solve_rolling_ols(
     y: &Array1<f64>,

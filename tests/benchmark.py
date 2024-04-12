@@ -12,8 +12,8 @@ from polars_ols.least_squares import SolveMethod
 
 
 def _make_data(n_samples: int = 2_000, n_features: int = 5) -> pl.DataFrame:
-    x = np.random.normal(size=(n_samples, n_features)).astype("float32")
-    eps = np.random.normal(size=n_samples, scale=0.1).astype("float32")
+    x = np.random.normal(size=(n_samples, n_features))
+    eps = np.random.normal(size=n_samples, scale=0.1)
     return pl.DataFrame(data=x, schema=[f"x{i + 1}" for i in range(n_features)]).with_columns(
         y=pl.lit(x.sum(1) + eps)
     )
@@ -192,21 +192,21 @@ if __name__ == "__main__":
     runner.bench_func("benchmark_recursive_least_squares", benchmark_recursive_least_squares, df)
     runner.bench_func("benchmark_rolling_least_squares", benchmark_rolling_least_squares, df)
 
-    # runner.bench_func("benchmark_least_squares_numpy_qr", benchmark_least_squares_numpy_qr, df)
-    # runner.bench_func("benchmark_least_squares_numpy_svd", benchmark_least_squares_numpy_svd, df)
-    # runner.bench_func("benchmark_ridge_sklearn_cholesky", benchmark_ridge_sklearn, df, "cholesky")
-    # runner.bench_func("benchmark_ridge_sklearn_svd", benchmark_ridge_sklearn, df, "svd")
-    # runner.bench_func(
-    #     "benchmark_wls_from_formula_statsmodels", benchmark_wls_from_formula_statsmodels, df
-    # )
-    # runner.bench_func("benchmark_elastic_net_sklearn", benchmark_elastic_net_sklearn, df)
-    # runner.bench_func(
-    #     "benchmark_recursive_least_squares_statsmodels",
-    #     benchmark_recursive_least_squares_statsmodels,
-    #     df,
-    # )
-    # runner.bench_func(
-    #     "benchmark_rolling_least_squares_statsmodels",
-    #     benchmark_rolling_least_squares_statsmodels,
-    #     df,
-    # )
+    runner.bench_func("benchmark_least_squares_numpy_qr", benchmark_least_squares_numpy_qr, df)
+    runner.bench_func("benchmark_least_squares_numpy_svd", benchmark_least_squares_numpy_svd, df)
+    runner.bench_func("benchmark_ridge_sklearn_cholesky", benchmark_ridge_sklearn, df, "cholesky")
+    runner.bench_func("benchmark_ridge_sklearn_svd", benchmark_ridge_sklearn, df, "svd")
+    runner.bench_func(
+        "benchmark_wls_from_formula_statsmodels", benchmark_wls_from_formula_statsmodels, df
+    )
+    runner.bench_func("benchmark_elastic_net_sklearn", benchmark_elastic_net_sklearn, df)
+    runner.bench_func(
+        "benchmark_recursive_least_squares_statsmodels",
+        benchmark_recursive_least_squares_statsmodels,
+        df,
+    )
+    runner.bench_func(
+        "benchmark_rolling_least_squares_statsmodels",
+        benchmark_rolling_least_squares_statsmodels,
+        df,
+    )
