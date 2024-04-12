@@ -1,4 +1,4 @@
-maturin[patchelf]
+maturin  # [patchelf]
 polars
 pre-commit
 black
