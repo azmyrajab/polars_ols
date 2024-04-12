@@ -99,8 +99,8 @@ jobs:
           buildcache: true
           color: true
           path: spack
-      - name: Install openssl & gcc
-        run: spack install openssl gcc
+      - name: Install openssl
+        run: spack install openssl
       - name: Set up environment variables
         #        export PKG_CONFIG_PATH=$(spack location --install-dir pkg-config)/bin/pkgconfig:$PKG_CONFIG_PATH
         #        echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH" >> $GITHUB_ENV
