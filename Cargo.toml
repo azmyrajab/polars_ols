@@ -20,8 +20,9 @@ approx = {version = "*" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
+blas-src = {version = "*", features = ["intel-mkl"]}
 ndarray = { version = "*", features = ["blas"]}
-ndarray-linalg = {version = "*", features = ["openblas"]}  # intel-mkl
+ndarray-linalg = {version = "*", features = ["intel-mkl"]}
 
 [target.'cfg(target_os = "macos")'.dependencies]
 ndarray = { version = "*", features = ["blas"]}
