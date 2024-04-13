@@ -100,10 +100,10 @@ jobs:
           color: true
           path: spack
       - name: Install OpenSSL
-        run: spack install openssl
+        run: spack install openssl@3.1
       - name: Set up environment variables
         run: |
-          export OPENSSL_DIR=$(spack location --install-dir openssl)
+          export OPENSSL_DIR=$(spack location --install-dir openssl@3.1)
           echo "OPENSSL_DIR=$OPENSSL_DIR" >> $GITHUB_ENV
           cat $GITHUB_ENV
       - name: Build wheels
