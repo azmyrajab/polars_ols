@@ -20,6 +20,8 @@ approx = {version = "*" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
+openssl = {version = "*", features = ["vendored"]}
+openssl-sys = {version = "*", features = ["vendored"]}
 ndarray = { version = "*", features = ["blas"]}
 ndarray-linalg = {version = "*", features = ["openblas"]}  # intel-mkl
 
