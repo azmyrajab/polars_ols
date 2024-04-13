@@ -17,9 +17,12 @@ faer = {version = "*"}
 faer-ext = {version = "*", features = ["ndarray"]}
 num-traits = { version = "*" }
 approx = {version = "*" }
+ndarray = { version = "*", features = ["matrixmultiply-threading"]}  # i.e. windows / linux arm etc.
 
 [target.'cfg(target_os = "linux")'.dependencies]
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
+
+[target.'cfg(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x64")))'.dependencies]
 blas-src = {version = "*", features = ["intel-mkl"]}
 ndarray = { version = "*", features = ["blas"]}
 ndarray-linalg = {version = "*", features = ["intel-mkl"]}
@@ -27,9 +30,6 @@ ndarray-linalg = {version = "*", features = ["intel-mkl"]}
 [target.'cfg(target_os = "macos")'.dependencies]
 ndarray = { version = "*", features = ["blas"]}
 ndarray-linalg = { version = "*" }
-
-[target.'cfg(not(any(target_os = "macos", target_os = "linux")))'.dependencies]
-ndarray = { version = "*", features = ["matrixmultiply-threading"]}  # i.e. windows
 
 [dev-dependencies]
 ndarray-linalg = {version = "*"}

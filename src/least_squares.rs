@@ -6,7 +6,10 @@ use ndarray::{array, s, Array, Array1, Array2, ArrayView1, Axis, NewAxis};
 use std::cmp::max;
 use std::str::FromStr;
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(any(
+    all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x64")),
+    target_os = "macos"
+))]
 use ndarray_linalg::LeastSquaresSvd;
 
 /// Invert square matrix input using either Cholesky or LU decomposition
@@ -101,14 +104,19 @@ fn solve_ridge_svd(
     v.dot(&d_ut_y)
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+#[cfg(not(any(
+    all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x64")),
+    target_os = "macos"
+)))]
 fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1<f64> {
-    // TODO: try to compute w/ LAPACK SVD. Must handle BLAS dependency on linux & windows OS
-    //      either use ndarray-linalg or directly call sgelsd from lapack crate..
+    // fallback SVD solver for platforms which don't (easily) support LAPACK solver
     solve_ridge_svd(y, x, 1.0e-64, rcond) // near zero ridge penalty
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(any(
+    all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x64")),
+    target_os = "macos"
+))]
 #[allow(unused_variables)]
 fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1<f64> {
     x.least_squares(y)
