@@ -155,6 +155,7 @@ def benchmark_rolling_least_squares(data: pl.DataFrame):
                 *features,
                 window_size=252,
                 min_periods=len(features),
+                null_policy="skip",
             )
         )
         .collect()
@@ -192,21 +193,21 @@ if __name__ == "__main__":
     runner.bench_func("benchmark_recursive_least_squares", benchmark_recursive_least_squares, df)
     runner.bench_func("benchmark_rolling_least_squares", benchmark_rolling_least_squares, df)
 
-    # runner.bench_func("benchmark_least_squares_numpy_qr", benchmark_least_squares_numpy_qr, df)
-    # runner.bench_func("benchmark_least_squares_numpy_svd", benchmark_least_squares_numpy_svd, df)
-    # runner.bench_func("benchmark_ridge_sklearn_cholesky", benchmark_ridge_sklearn, df, "cholesky")
-    # runner.bench_func("benchmark_ridge_sklearn_svd", benchmark_ridge_sklearn, df, "svd")
-    # runner.bench_func(
-    #     "benchmark_wls_from_formula_statsmodels", benchmark_wls_from_formula_statsmodels, df
-    # )
-    # runner.bench_func("benchmark_elastic_net_sklearn", benchmark_elastic_net_sklearn, df)
-    # runner.bench_func(
-    #     "benchmark_recursive_least_squares_statsmodels",
-    #     benchmark_recursive_least_squares_statsmodels,
-    #     df,
-    # )
-    # runner.bench_func(
-    #     "benchmark_rolling_least_squares_statsmodels",
-    #     benchmark_rolling_least_squares_statsmodels,
-    #     df,
-    # )
+    runner.bench_func("benchmark_least_squares_numpy_qr", benchmark_least_squares_numpy_qr, df)
+    runner.bench_func("benchmark_least_squares_numpy_svd", benchmark_least_squares_numpy_svd, df)
+    runner.bench_func("benchmark_ridge_sklearn_cholesky", benchmark_ridge_sklearn, df, "cholesky")
+    runner.bench_func("benchmark_ridge_sklearn_svd", benchmark_ridge_sklearn, df, "svd")
+    runner.bench_func(
+        "benchmark_wls_from_formula_statsmodels", benchmark_wls_from_formula_statsmodels, df
+    )
+    runner.bench_func("benchmark_elastic_net_sklearn", benchmark_elastic_net_sklearn, df)
+    runner.bench_func(
+        "benchmark_recursive_least_squares_statsmodels",
+        benchmark_recursive_least_squares_statsmodels,
+        df,
+    )
+    runner.bench_func(
+        "benchmark_rolling_least_squares_statsmodels",
+        benchmark_rolling_least_squares_statsmodels,
+        df,
+    )

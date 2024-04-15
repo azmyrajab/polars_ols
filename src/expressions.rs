@@ -5,7 +5,8 @@ use polars::datatypes::{DataType, Field, Float64Type};
 use polars::error::{polars_err, PolarsResult};
 use polars::frame::DataFrame;
 use polars::prelude::{
-    BooleanChunked, FillNullStrategy, IndexOrder, IntoSeries, NamedFrom, NamedFromOwned, Series,
+    lit, BooleanChunked, FillNullStrategy, IndexOrder, IntoLazy, IntoSeries, NamedFrom,
+    NamedFromOwned, Series, NULL,
 };
 use pyo3_polars::derive::polars_expr;
 use serde::Deserialize;
@@ -116,11 +117,15 @@ fn coefficients_to_struct_series(coefficients: &Array2<f64>, feature_names: &[&s
                 } else {
                     feature_names[i]
                 };
-
+                // let col = col.map(|x| if x.is_nan() { None } else { Some(x) });
                 Series::from_vec(name, col.to_vec())
             })
             .collect::<Vec<Series>>(),
     )
+    .unwrap()
+    .lazy()
+    .fill_nan(lit(NULL))
+    .collect()
     .unwrap();
     // Convert DataFrame to a Series of struct dtype
     df.into_struct("coefficients").into_series()
@@ -141,6 +146,11 @@ fn mask_predictions(predictions: Vec<f64>, is_valid_mask: &BooleanChunked) -> Ve
         .collect()
 }
 
+enum Coefficients {
+    Array1(Array1<f64>),
+    Array2(Array2<f64>),
+}
+
 /// Computes linear predictions and returns a Polars series.
 ///
 /// # Arguments
@@ -153,12 +163,16 @@ fn mask_predictions(predictions: Vec<f64>, is_valid_mask: &BooleanChunked) -> Ve
 /// A Polars Series containing the computed predictions.
 fn make_predictions(
     features: &Array2<f64>,
-    coefficients: &Array1<f64>,
+    coefficients: &Coefficients,
     is_valid_mask: Option<&BooleanChunked>,
     name: &str,
 ) -> Series {
     // compute dot product of (zero-filled) features with coefficients
-    let predictions = features.dot(coefficients).to_vec();
+    let predictions = match coefficients {
+        Coefficients::Array1(coefficients) => features.dot(coefficients).to_vec(),
+        Coefficients::Array2(coefficients) => (features * coefficients).sum_axis(Axis(1)).to_vec(),
+    };
+
     if let Some(is_valid) = is_valid_mask {
         // is_valid mask has been passed: when true retain values and otherwise mask with None.
         let masked_predictions: Vec<Option<f64>> = mask_predictions(predictions, is_valid);
@@ -180,6 +194,7 @@ pub enum NullPolicy {
     Ignore,
     DropZero,
     DropYZeroX,
+    Skip,
 }
 
 impl FromStr for NullPolicy {
@@ -189,6 +204,7 @@ impl FromStr for NullPolicy {
         match input {
             "zero" => Ok(NullPolicy::Zero),
             "drop" => Ok(NullPolicy::Drop),
+            "skip" => Ok(NullPolicy::Skip),
             "ignore" => Ok(NullPolicy::Ignore),
             "drop_y_zero_x" => Ok(NullPolicy::DropYZeroX),
             "drop_zero" => Ok(NullPolicy::DropZero),
@@ -200,7 +216,7 @@ impl FromStr for NullPolicy {
 fn compute_is_valid_mask(inputs: &[Series], null_policy: &NullPolicy) -> Option<BooleanChunked> {
     match null_policy {
         // Compute the intersection of all non-null rows across input series
-        NullPolicy::Drop | NullPolicy::DropZero => {
+        NullPolicy::Drop | NullPolicy::DropZero | NullPolicy::Skip => {
             let is_valid_mask = inputs[0].is_not_null();
             Some(
                 inputs[1..]
@@ -214,15 +230,19 @@ fn compute_is_valid_mask(inputs: &[Series], null_policy: &NullPolicy) -> Option<
     }
 }
 
-fn compute_is_valid_mask_vec(inputs: &[Series], null_policy: &NullPolicy) -> Vec<bool> {
-    let is_valid = compute_is_valid_mask(inputs, null_policy);
+fn convert_is_valid_mask_to_vec(is_valid: &Option<BooleanChunked>, n_samples: usize) -> Vec<bool> {
     if let Some(boolean_chunked) = is_valid {
+        assert_eq!(
+            boolean_chunked.len(),
+            n_samples,
+            "length of is_valid mask must match number of samples"
+        );
         boolean_chunked
             .iter()
             .map(|opt_bool| opt_bool.unwrap_or(false))
             .collect()
     } else {
-        vec![true; inputs[0].len()]
+        vec![true; n_samples]
     }
 }
 
@@ -263,7 +283,7 @@ fn handle_nulls(
                     .unwrap()
             }));
         }
-        NullPolicy::Drop | NullPolicy::DropZero => {
+        NullPolicy::Drop | NullPolicy::DropZero | NullPolicy::Skip => {
             // Compute the intersection of all non-null rows across input series
             let is_valid_mask = is_valid_mask.unwrap();
             // Apply mask to all input series
@@ -375,7 +395,8 @@ fn least_squares(inputs: &[Series], kwargs: OLSKwargs) -> PolarsResult<Series> {
     let null_policy = kwargs.get_null_policy();
     let is_valid = compute_is_valid_mask(inputs, &null_policy);
     let (y_fit, x_fit) = convert_polars_to_ndarray(inputs, &null_policy, is_valid.as_ref());
-    let coefficients = _get_least_squares_coefficients(&y_fit, &x_fit, kwargs);
+    let coefficients =
+        Coefficients::Array1(_get_least_squares_coefficients(&y_fit, &x_fit, kwargs));
 
     if matches!(null_policy, NullPolicy::Ignore | NullPolicy::Zero) {
         // absent additional filtering: features for fitting is the same as for prediction
@@ -433,7 +454,10 @@ fn recursive_least_squares_coefficients(
     kwargs: RLSKwargs,
 ) -> PolarsResult<Series> {
     let null_policy = kwargs.get_null_policy();
-    let is_valid = compute_is_valid_mask_vec(inputs, &null_policy);
+
+    let is_valid = compute_is_valid_mask(inputs, &null_policy);
+    let is_valid = convert_is_valid_mask_to_vec(&is_valid, inputs[0].len());
+
     let (y, x) = convert_polars_to_ndarray(inputs, &NullPolicy::Zero, None);
     let initial_state_mean = convert_option_vec_to_array1(kwargs.initial_state_mean);
     let coefficients = solve_recursive_least_squares(
@@ -458,18 +482,25 @@ fn recursive_least_squares_coefficients(
 #[polars_expr(output_type=Float64)]
 fn recursive_least_squares(inputs: &[Series], kwargs: RLSKwargs) -> PolarsResult<Series> {
     let null_policy = kwargs.get_null_policy();
-    let is_valid = compute_is_valid_mask_vec(inputs, &null_policy);
+    let is_valid = compute_is_valid_mask(inputs, &null_policy);
+    let is_valid_vec = convert_is_valid_mask_to_vec(&is_valid, inputs[0].len());
     let (y, x) = convert_polars_to_ndarray(inputs, &NullPolicy::Zero, None);
-    let coefficients = solve_recursive_least_squares(
+
+    let coefficients = Coefficients::Array2(solve_recursive_least_squares(
         &y,
         &x,
         kwargs.half_life,
         kwargs.initial_state_covariance,
         None,
-        &is_valid,
-    );
-    let predictions = (&x * &coefficients).sum_axis(Axis(1));
-    Ok(Series::from_vec(inputs[0].name(), predictions.to_vec()))
+        &is_valid_vec,
+    ));
+
+    Ok(make_predictions(
+        &x,
+        &coefficients,
+        is_valid.as_ref(),
+        inputs[0].name(),
+    ))
 }
 
 #[polars_expr(output_type_func=coefficients_struct_dtype)]
@@ -478,11 +509,9 @@ fn rolling_least_squares_coefficients(
     kwargs: RollingKwargs,
 ) -> PolarsResult<Series> {
     let null_policy = kwargs.get_null_policy();
-    assert!(
-        matches!(null_policy, NullPolicy::Ignore | NullPolicy::Zero),
-        "null policies which drop rows are not yet supported for rolling least squares"
-    );
-    let (y, x) = convert_polars_to_ndarray(inputs, &null_policy, None);
+    let is_valid = compute_is_valid_mask(inputs, &null_policy);
+    let is_valid = convert_is_valid_mask_to_vec(&is_valid, inputs[0].len());
+    let (y, x) = convert_polars_to_ndarray(inputs, &NullPolicy::Zero, None);
     let coefficients = solve_rolling_ols(
         &y,
         &x,
@@ -490,6 +519,8 @@ fn rolling_least_squares_coefficients(
         kwargs.min_periods,
         kwargs.use_woodbury,
         kwargs.alpha,
+        &is_valid,
+        null_policy,
     );
     // convert coefficients to a polars struct
     let feature_names: Vec<&str> = inputs[1..].iter().map(|input| input.name()).collect();
@@ -505,21 +536,26 @@ fn rolling_least_squares_coefficients(
 #[polars_expr(output_type=Float64)]
 fn rolling_least_squares(inputs: &[Series], kwargs: RollingKwargs) -> PolarsResult<Series> {
     let null_policy = kwargs.get_null_policy();
-    assert!(
-        matches!(null_policy, NullPolicy::Ignore | NullPolicy::Zero),
-        "null policies which drop rows are not yet supported for rolling least Squares"
-    );
-    let (y, x) = convert_polars_to_ndarray(inputs, &null_policy, None);
-    let coefficients = solve_rolling_ols(
+    let is_valid = compute_is_valid_mask(inputs, &null_policy);
+    let is_valid_vec = convert_is_valid_mask_to_vec(&is_valid, inputs[0].len());
+    let (y, x) = convert_polars_to_ndarray(inputs, &NullPolicy::Zero, None);
+    let coefficients = Coefficients::Array2(solve_rolling_ols(
         &y,
         &x,
         kwargs.window_size,
         kwargs.min_periods,
         kwargs.use_woodbury,
         kwargs.alpha,
-    );
-    let predictions = (&x * &coefficients).sum_axis(Axis(1));
-    Ok(Series::from_vec(inputs[0].name(), predictions.to_vec()))
+        &is_valid_vec,
+        null_policy,
+    ));
+
+    Ok(make_predictions(
+        &x,
+        &coefficients,
+        is_valid.as_ref(),
+        inputs[0].name(),
+    ))
 }
 
 /// This function provides a convenience expression to multiply fitted coefficients with features,

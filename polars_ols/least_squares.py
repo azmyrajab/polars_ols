@@ -50,6 +50,8 @@ NullPolicy = Literal[
     "drop_zero",  # drops any rows with nulls in fitting, but then computes predictions
     # with zero filled features. Use this to allow for extrapolation.
     "drop_y_zero_x",  # only drops rows with null targets and fill any null features with zero
+    "skip",  # only relevant to rolling window regression: this causes any observations with null
+    # to be omitted and only valid observations within the fixed window are used.
 ]
 OutputMode = Literal["predictions", "residuals", "coefficients"]
 SolveMethod = Literal["qr", "svd", "chol", "lu", "cd"]
@@ -104,9 +106,11 @@ class OLSKwargs(Kwargs):
 
     def __post_init__(self):
         # rust code does validate all options, but prefer to fail, on some, early
+        valid_ols_policies = _VALID_NULL_POLICIES - {"skip"}  # skip does not make
+        # sense outside of moving window models.
         assert (
-            self.null_policy in _VALID_NULL_POLICIES
-        ), f"'null_policy' must be one of {_VALID_NULL_POLICIES}. You passed: {self.null_policy}"
+            self.null_policy in valid_ols_policies
+        ), f"'null_policy' must be one of {valid_ols_policies}. You passed: {self.null_policy}"
         assert (
             self.solve_method in _VALID_SOLVE_METHODS
         ), f"'solve_method' must be one of {_VALID_SOLVE_METHODS}. You passed: {self.solve_method}"
@@ -132,12 +136,6 @@ class RLSKwargs(Kwargs):
     initial_state_mean: Union[Optional[List[float], float]] = None
     null_policy: NullPolicy = "drop"
 
-    def __post_init__(self):
-        # rust code does validate all options, but prefer to fail, on some, early
-        assert (
-            self.null_policy in _VALID_NULL_POLICIES
-        ), f"'null_policy' must be one of {_VALID_NULL_POLICIES}. You passed: {self.null_policy}"
-
 
 @dataclass
 class RollingKwargs(Kwargs):
@@ -156,6 +154,7 @@ class RollingKwargs(Kwargs):
     min_periods: Optional[int] = None
     use_woodbury: Optional[bool] = None
     alpha: Optional[float] = None  # optional ridge alpha
+    null_policy: NullPolicy = "drop"
 
 
 def _pre_process_data(
@@ -185,7 +184,7 @@ def _pre_process_data(
         else:
             features.append(target.fill_null(0.0).mul(0.0).add(1.0).alias("const"))
     # handle sample weights
-    sqrt_w: Optional[float] = None
+    sqrt_w: Optional[pl.Expr] = None
     if sample_weights is not None:
         sqrt_w = sample_weights.sqrt()
         target *= sqrt_w
@@ -344,7 +343,7 @@ def compute_rolling_least_squares(
     assert mode in _VALID_OUTPUT_MODES, f"'mode' must be one of {_VALID_OUTPUT_MODES}"
     rolling_kwargs: RollingKwargs = rolling_kwargs or RollingKwargs()
     # register either coefficient or prediction plugin functions
-    return _register_least_squares_plugin(
+    expr = _register_least_squares_plugin(
         target,
         *features,
         mode=mode,
@@ -353,6 +352,9 @@ def compute_rolling_least_squares(
         sample_weights=sample_weights,
         add_intercept=add_intercept,
     )
+    if mode in {"predictions", "residuals"}:
+        expr = expr.fill_nan(None)
+    return expr
 
 
 def compute_least_squares_from_formula(

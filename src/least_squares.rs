@@ -1,9 +1,11 @@
+use crate::expressions::NullPolicy;
 use faer::linalg::solvers::SolverCore;
 use faer::prelude::*;
 use faer::Side;
 use faer_ext::{IntoFaer, IntoNdarray};
 use ndarray::{array, s, Array, Array1, Array2, ArrayView1, Axis, NewAxis};
-use std::cmp::max;
+use std::cmp::{max, min};
+use std::collections::VecDeque;
 use std::str::FromStr;
 
 #[cfg(any(
@@ -165,36 +167,53 @@ pub fn solve_ols(
     }
 }
 
-/// Solves the normal equations: (X^T X) coefficients = X^T Y
-/// Attempts to solve with either Cholesky or LU (partial pivoting)
-fn solve_normal_equations(xtx: &Array2<f64>, xty: &Array1<f64>, use_cholesky: bool) -> Array1<f64> {
-    // Attempt to solve via Cholesky decomposition
-    let xtx_faer = xtx.view().into_faer();
-    if use_cholesky {
-        match xtx_faer.cholesky(Side::Lower) {
-            Ok(cholesky) => {
-                // Cholesky decomposition successful
-                return cholesky
-                    .solve(&xty.slice(s![.., NewAxis]).into_faer())
-                    .as_ref()
-                    .into_ndarray()
-                    .slice(s![.., 0])
-                    .into_owned();
-            }
-            Err(_) => {
-                // Cholesky decomposition failed, fallback to LU decomposition w/ partial pivoting
-                println!("Cholesky decomposition failed, falling back to LU decomposition");
-            }
-        }
-    }
-    // Fall back to LU decomposition w/ partial pivoting
-    xtx_faer
+fn solve_ols_lu(y: &Array1<f64>, x: &Array2<f64>) -> Array1<f64> {
+    let x_faer = x.view().into_faer();
+    x_faer
         .partial_piv_lu()
-        .solve(&xty.slice(s![.., NewAxis]).into_faer())
+        .solve(&y.slice(s![.., NewAxis]).into_faer())
         .as_ref()
         .into_ndarray()
         .slice(s![.., 0])
         .into_owned()
+}
+
+/// Solves the normal equations: (X^T X) coefficients = X^T Y
+fn solve_normal_equations(
+    xtx: &Array2<f64>,
+    xty: &Array1<f64>,
+    solve_method: Option<SolveMethod>,
+) -> Array1<f64> {
+    // Attempt to solve via Cholesky decomposition by default
+    let solve_method = solve_method.unwrap_or(SolveMethod::Cholesky);
+
+    match solve_method {
+        SolveMethod::Cholesky => {
+            let xtx_faer = xtx.view().into_faer();
+            match xtx_faer.cholesky(Side::Lower) {
+                Ok(cholesky) => {
+                    // Cholesky decomposition successful
+                    cholesky
+                        .solve(&xty.slice(s![.., NewAxis]).into_faer())
+                        .as_ref()
+                        .into_ndarray()
+                        .slice(s![.., 0])
+                        .into_owned()
+                }
+                Err(_) => {
+                    // Cholesky decomposition failed, fallback to SVD
+                    println!("Cholesky decomposition failed, falling back to SVD");
+                    solve_ols_svd(xty, xtx, None)
+                }
+            }
+        }
+        SolveMethod::LU => {
+            // LU with partial pivoting
+            solve_ols_lu(xty, xtx)
+        }
+        SolveMethod::QR | SolveMethod::SVD => solve_ols(xty, xtx, Some(solve_method), None),
+        _ => panic!("Unsupported solve_method for solving normal equations!"),
+    }
 }
 
 /// Solves a ridge regression problem of the form: ||y - x B|| + alpha * ||B||
@@ -215,11 +234,7 @@ pub fn solve_ridge(
             let eye = Array::eye(x_t_x.shape()[0]);
             let ridge_matrix = &x_t_x + &eye * alpha;
             // use cholesky if specifically chosen, and otherwise LU.
-            solve_normal_equations(
-                &ridge_matrix,
-                &x_t_y,
-                solve_method == Some(SolveMethod::Cholesky),
-            )
+            solve_normal_equations(&ridge_matrix, &x_t_y, solve_method)
         }
         Some(SolveMethod::SVD) => solve_ridge_svd(y, x, alpha, rcond),
         _ => panic!(
@@ -267,7 +282,7 @@ pub fn solve_elastic_net(
     }
     assert!(alpha > 0., "'alpha' must be strictly positive");
     assert!(
-        (0. ..=1.).contains(&l1_ratio),
+        (0.0..=1.).contains(&l1_ratio),
         "'l1_ratio' must be strictly between 0. and 1."
     );
 
@@ -302,10 +317,13 @@ pub fn solve_elastic_net(
 }
 
 pub struct RecursiveLeastSquares {
-    forgetting_factor: f64, // exponential decay factor
-    coef: Array1<f64>,      // coefficient vector
-    p: Array2<f64>,         // state covariance
-    k: Array1<f64>,         // kalman gain
+    forgetting_factor: f64,
+    // exponential decay factor
+    coef: Array1<f64>,
+    // coefficient vector
+    p: Array2<f64>,
+    // state covariance
+    k: Array1<f64>, // kalman gain
 }
 
 impl RecursiveLeastSquares {
@@ -414,7 +432,7 @@ pub fn outer_product(u: &ArrayView1<f64>, v: &ArrayView1<f64>) -> Array2<f64> {
 
 fn inv_diag(c: &Array2<f64>) -> Array2<f64> {
     let s = c.raw_dim();
-    assert!(s[0] == s[1]);
+    assert_eq!(s[0], s[1]);
     let mut res: Array2<f64> = Array2::zeros(s);
     for i in 0..s[0] {
         res[(i, i)] = c[(i, i)].recip();
@@ -471,6 +489,164 @@ pub fn update_xtx_inv(
     woodbury_update(xtx_inv, &u, c, &v, Some(true))
 }
 
+/// Trait representing rolling OLS state updates.
+trait RollingOLSUpdate {
+    /// creates a new state
+    fn new(xtx: Array2<f64>, xty: Array1<f64>) -> Self;
+
+    /// Updates the state with a new observations.
+    fn update<'a>(
+        &mut self,
+        x_new: ArrayView1<'a, f64>,
+        y_new: f64,
+        x_prev: Option<ArrayView1<'a, f64>>,
+        y_prev: Option<f64>,
+    );
+
+    /// subtracts previous observations without adding new ones
+    fn subtract(&mut self, x_prev: ArrayView1<f64>, y_prev: f64);
+
+    /// Solves the regression equation and returns the coefficients.
+    fn solve(&mut self) -> Array1<f64>;
+}
+
+struct NonWoodburyState {
+    xtx: Array2<f64>,
+    xty: Array1<f64>,
+}
+
+struct WoodburyState {
+    xtx_inv: Array2<f64>,
+    xty: Array1<f64>,
+    c: Array2<f64>,
+}
+
+impl RollingOLSUpdate for NonWoodburyState {
+    /// Creates a new RollingOLSState instance.
+    fn new(xtx: Array2<f64>, xty: Array1<f64>) -> Self {
+        NonWoodburyState { xtx, xty }
+    }
+
+    /// Updates the state with a new observation.
+    fn update<'a>(
+        &mut self,
+        x_new: ArrayView1<'a, f64>,
+        y_new: f64,
+        x_prev: Option<ArrayView1<'a, f64>>,
+        y_prev: Option<f64>,
+    ) {
+        self.xtx += &outer_product(&x_new, &x_new);
+        self.xty = &self.xty + &x_new * y_new;
+
+        if let Some(x_prev) = x_prev {
+            let y_prev = y_prev.expect(
+                "either both or neither of \
+                                             x_prev & y_prev must be valid at the same time",
+            );
+            self.xtx -= &outer_product(&x_prev, &x_prev);
+            self.xty = &self.xty - &x_prev * y_prev;
+        }
+    }
+
+    fn subtract(&mut self, x_prev: ArrayView1<f64>, y_prev: f64) {
+        self.xtx -= &outer_product(&x_prev, &x_prev);
+        self.xty = &self.xty - &x_prev * y_prev;
+    }
+
+    fn solve(&mut self) -> Array1<f64> {
+        solve_normal_equations(&self.xtx, &self.xty, None)
+    }
+}
+
+impl RollingOLSUpdate for WoodburyState {
+    /// Creates a new WoodburyState instance.
+    fn new(xtx: Array2<f64>, xty: Array1<f64>) -> Self {
+        WoodburyState {
+            xtx_inv: xtx,
+            xty,
+            // make array 'c': [[-1, 0], [0, 1]]; which drops old and adds new
+            c: array![[-1., 0.], [0., 1.]],
+        }
+    }
+
+    /// Updates the state with a new observation.
+    fn update<'a>(
+        &mut self,
+        x_new: ArrayView1<'a, f64>,
+        y_new: f64,
+        x_prev: Option<ArrayView1<'a, f64>>,
+        y_prev: Option<f64>,
+    ) {
+        if let Some(x_prev) = x_prev {
+            let y_prev = y_prev.expect(
+                "either both or neither of \
+                                             x_prev & y_prev must be valid at the same time",
+            );
+            // create rank 2 update array
+            let mut x_update = ndarray::stack(Axis(0), &[x_prev, x_new]).unwrap(); // 2 x K
+
+            // multiply x_old row by -1.0 (subtract the previous contribution)
+            x_update.row_mut(0).mapv_inplace(|elem| -elem);
+
+            // update inv(XTX) and XTY
+            self.xtx_inv = update_xtx_inv(&self.xtx_inv, &x_update, Some(&self.c));
+            self.xty = &self.xty + &x_new * y_new   // add new contribution
+                - &x_prev * y_prev; // subtract old contribution
+        } else {
+            let x_update = x_new.insert_axis(Axis(0)).into_owned(); // 1 x K
+            self.xtx_inv = update_xtx_inv(&self.xtx_inv, &x_update, None);
+            self.xty = &self.xty + &x_new * y_new;
+        }
+    }
+
+    fn subtract(&mut self, x_prev: ArrayView1<f64>, y_prev: f64) {
+        self.xty = &self.xty - &x_prev * y_prev;
+        let x_update = x_prev.insert_axis(Axis(0)).into_owned(); // 1 x K
+        self.xtx_inv = update_xtx_inv(&self.xtx_inv, &x_update, Some(&array![[-1.0]]));
+    }
+
+    fn solve(&mut self) -> Array1<f64> {
+        self.xtx_inv.dot(&self.xty)
+    }
+}
+
+/// Enum representing different variants of RollingOLSState.
+enum RollingOLSState {
+    NonWoodbury(NonWoodburyState),
+    Woodbury(WoodburyState),
+}
+
+impl RollingOLSState {
+    /// Updates the state with a new observation.
+    fn update<'a>(
+        &mut self,
+        x_new: ArrayView1<'a, f64>,
+        y_new: f64,
+        x_prev: Option<ArrayView1<'a, f64>>,
+        y_prev: Option<f64>,
+    ) {
+        match self {
+            RollingOLSState::NonWoodbury(state) => state.update(x_new, y_new, x_prev, y_prev),
+            RollingOLSState::Woodbury(state) => state.update(x_new, y_new, x_prev, y_prev),
+        }
+    }
+
+    fn subtract(&mut self, x_prev: ArrayView1<f64>, y_prev: f64) {
+        match self {
+            RollingOLSState::NonWoodbury(state) => state.subtract(x_prev, y_prev),
+            RollingOLSState::Woodbury(state) => state.subtract(x_prev, y_prev),
+        }
+    }
+
+    /// Solves the regression equation and returns the coefficients.
+    fn solve(&mut self) -> Array1<f64> {
+        match self {
+            RollingOLSState::NonWoodbury(state) => state.solve(),
+            RollingOLSState::Woodbury(state) => state.solve(),
+        }
+    }
+}
+
 /// Solves rolling ordinary least squares (OLS) regression.
 ///
 /// This function calculates the coefficients of the linear regression model
@@ -489,6 +665,7 @@ pub fn update_xtx_inv(
 /// * `use_woodbury` - An optional parameter specifying whether to use Woodbury matrix identity
 ///                    which propagates inv(XTX) directly. If not provided, it defaults to `false`.
 /// * `alpha` - An optional L2 regularization parameter. Defaults to 0.
+/// * `is_valid` - A slice of booleans indicating if each sample is valid.
 ///
 pub fn solve_rolling_ols(
     y: &Array1<f64>,
@@ -497,10 +674,13 @@ pub fn solve_rolling_ols(
     min_periods: Option<usize>,
     use_woodbury: Option<bool>,
     alpha: Option<f64>,
+    is_valid: &[bool],
+    null_policy: NullPolicy,
 ) -> Array2<f64> {
     let n = x.shape()[0];
     let k = x.shape()[1]; // Number of independent variables
-    let min_periods = min_periods.unwrap_or(std::cmp::min(k, window_size));
+    let mut min_periods = min_periods.unwrap_or(min(k, window_size));
+
     // default to using woodbury if number of features is relatively large.
     let use_woodbury = use_woodbury.unwrap_or(k > 60);
     let mut coefficients = Array2::from_elem((n, k), f64::NAN);
@@ -516,85 +696,150 @@ pub fn solve_rolling_ols(
         )
     };
 
-    // Initialize X^T X, inv(X.T X), and X^T Y
-    let x_warmup = x.slice(s![..min_periods, ..]);
-    let y_warmup = y.slice(s![..min_periods]);
-    let mut xty = x_warmup.t().dot(&y_warmup);
-    let mut xtx = x_warmup.t().dot(&x_warmup);
-
-    // add ridge penalty
-    if alpha > 0. {
-        xtx = xtx + Array2::<f64>::eye(k) * alpha
+    // Update 'min_periods' to point to the index location of the nth valid observation.
+    // E.g. if user passed min_periods=2 and data validity if [false, false, true, true, ...],
+    // the updated value would be '3' (the 4th element).
+    let mut n_valid = 0;
+    for (i, &valid) in is_valid.iter().enumerate() {
+        if valid {
+            n_valid += 1;
+        }
+        if n_valid == min_periods {
+            min_periods = i + 1;
+            break;
+        }
     }
 
-    // Use woodbury to propagate inv(X.T X) & (X.T Y)
-    if use_woodbury {
-        // assign warm-up coefficients
-        let mut xtx_inv = inv(&xtx, false);
-        let coef_warmup = xtx_inv.t().dot(&xty);
-        coefficients
-            .slice_mut(s![min_periods - 1, ..])
-            .assign(&coef_warmup);
+    // initialize a deque holding last 'window' valid indices
+    let mut is_valid_history: VecDeque<usize> = VecDeque::with_capacity(window_size);
 
-        // make c [[-1, 0], [0, 1]]; which drops old and adds new
-        let c: Array2<f64> = array![[-1., 0.], [0., 1.]];
+    // Initialize X^T X, X^T Y, and deque window -- filtering for the first min_periods
+    // valid observations.
+    let mut xtx = Array2::<f64>::zeros((k, k));
+    let mut xty = Array1::<f64>::zeros(k);
+    for i in 0..min_periods {
+        if is_valid[i] {
+            let x_i = x.row(i); // K x 1
+            let y_i = y[i];
+            xtx += &outer_product(&x_i, &x_i); // K x K
+            xty = xty + &x_i * y_i;
 
+            // add index of (valid) warm-up observations
+            if is_valid_history.len() != window_size {
+                is_valid_history.push_back(i)
+            }
+        }
+    }
+
+    // optionally add a ridge penalty
+    if alpha > 0. {
+        xtx += &(Array2::<f64>::eye(k) * alpha)
+    }
+
+    // initialize state object
+    let mut state = if use_woodbury {
+        let xtx_inv = inv(&xtx, false);
+        let state = WoodburyState::new(xtx_inv, xty);
+        RollingOLSState::Woodbury(state)
+    } else {
+        let state = NonWoodburyState::new(xtx, xty);
+        RollingOLSState::NonWoodbury(state)
+    };
+
+    // compute and assign warm-up coefficients
+    let coef_warmup = state.solve();
+    let mut coefficients_i = coef_warmup.clone();
+    coefficients
+        .slice_mut(s![min_periods - 1, ..])
+        .assign(&coef_warmup);
+
+    // 1) handle 'drop' mode: this matches literally dropping invalid data,
+    // computing rolling window estimates, and then re-aligning to original data -- but faster!
+    if matches!(
+        null_policy,
+        NullPolicy::Drop | NullPolicy::DropZero | NullPolicy::DropYZeroX
+    ) {
+        let mut is_saturated = is_valid_history.len() == window_size;
         // Slide the window and update coefficients
         for i in min_periods..n {
-            let i_start = i.saturating_sub(window_size);
-            let x_new = x.row(i);
+            // update XTX w/ latest data point
+            if is_valid[i] {
+                let x_new = x.row(i);
+                let y_new = y[i];
 
-            if i > window_size - 1 {
-                let x_prev = x.row(i_start);
+                // subtract old and add new: if window is saturated
+                if is_saturated {
+                    let i_start = is_valid_history[0];
+                    let x_prev = x.row(i_start);
+                    let y_prev = y[i_start];
+                    state.update(x_new, y_new, Some(x_prev), Some(y_prev));
+                    is_valid_history.pop_front();
+                } else {
+                    // just add the new observations
+                    state.update(x_new, y_new, None, None);
+                }
 
-                // create rank 2 update array
-                let mut x_update = ndarray::stack(Axis(0), &[x_prev, x_new]).unwrap(); // 2 x K
+                // update new coefficients
+                coefficients_i = state.solve();
+                coefficients.slice_mut(s![i, ..]).assign(&coefficients_i);
 
-                // multiply x_old row by -1.0 (subtract the previous contribution)
-                x_update.row_mut(0).mapv_inplace(|elem| -elem);
+                // add new observations to deque
+                is_valid_history.push_back(i);
 
-                // update inv(XTX) and XTY
-                xtx_inv = update_xtx_inv(&xtx_inv, &x_update, Some(&c));
-                xty = xty + &x_new * y[i]  // add new contribution
-                    - &x_prev * y[i_start] // subtract old contribution
-                ;
+                // check if window is saturated with enough valid observations
+                if !is_saturated {
+                    is_saturated = is_valid_history.len() == window_size;
+                }
             } else {
-                let x_update = x_new.insert_axis(Axis(0)).into_owned(); // 1 x K
-                xtx_inv = update_xtx_inv(&xtx_inv, &x_update, None);
-                xty = xty + &x_new * y[i];
+                // forward fill last coefficients
+                coefficients.slice_mut(s![i, ..]).assign(&coefficients_i);
             }
-            coefficients.slice_mut(s![i, ..]).assign(&xtx_inv.dot(&xty));
         }
     } else {
-        // update X.T X & X.T Y and solve normal equations at every time step
-        // assign warm-up coefficients
-        let coef_warmup = solve_normal_equations(&xtx, &xty, false);
-
-        coefficients
-            .slice_mut(s![min_periods - 1, ..])
-            .assign(&coef_warmup);
-
-        // Slide the window and update coefficients
+        // 2) handle 'skip' mode (this matches statsmodels: mode=drop)
         for i in min_periods..n {
             let i_start = i.saturating_sub(window_size);
-            // update XTX w/ latest data point
-            let x_new = x.row(i);
+            let is_valid_i = is_valid[i];
+            let is_valid_i_start = is_valid[i_start];
 
-            // Add new contributions
-            xtx += &outer_product(&x_new, &x_new);
-            xty = xty + &x_new * y[i];
+            let n_valid = is_valid[i_start + 1..i + 1]
+                .iter()
+                .filter(|&&valid| valid)
+                .count();
 
-            // Subtract the previous contribution
-            if i > window_size - 1 {
-                let x_prev = x.row(i_start);
-                xtx -= &outer_product(&x_prev, &x_prev);
-                xty = xty - &x_prev * y[i_start];
+            // do a rank 2 update
+            if is_valid_i {
+                let x_new = x.row(i);
+                let y_new = y[i];
+                // window is saturated and both ends are valid: do rolling [rank 2 update]
+                if (i >= window_size) & is_valid_i_start {
+                    let x_prev = x.row(i_start);
+                    let y_prev = y[i_start];
+                    state.update(x_new, y_new, Some(x_prev), Some(y_prev));
+                } else {
+                    // only new observation is valid : do expanding [rank 1 update]
+                    state.update(x_new, y_new, None, None);
+                }
+                // only update coefficients if the window contains at least min_period obs
+                if n_valid > 1 {
+                    coefficients_i = state.solve();
+                }
+            } else if is_valid_i_start & !is_valid_i {
+                if i >= window_size {
+                    // only last observation is valid: subtract it
+                    let x_prev = x.row(i_start);
+                    let y_prev = y[i_start];
+                    state.subtract(x_prev, y_prev);
+                    // only update coefficients if the window contains at least min_period obs
+                    if n_valid > 1 {
+                        coefficients_i = state.solve();
+                    }
+                }
             }
 
-            // update coefficients
-            let coefficients_i = solve_normal_equations(&xtx, &xty, true);
             coefficients.slice_mut(s![i, ..]).assign(&coefficients_i);
         }
     }
+
     coefficients
 }

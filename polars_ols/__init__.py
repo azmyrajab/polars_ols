@@ -89,7 +89,7 @@ class LeastSquares:
         sample_weights: Optional[pl.Expr] = None,
         add_intercept: bool = False,
         mode: OutputMode = "predictions",
-        null_policy: NullPolicy = "ignore",
+        null_policy: NullPolicy = "drop",
         **rolling_kwargs,
     ):
         return compute_rolling_least_squares(

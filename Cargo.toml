@@ -13,7 +13,7 @@ pyo3-polars = { version = "*", features = ["derive"] }
 serde = { version = "*", features = ["derive"] }
 polars = { version = "*", features = ["performant", "lazy", "ndarray", "dtype-struct"]}
 ndarray-rand = {version = "*"}
-faer = {version = "*"}
+faer = {version = "*", features = ["std", "rayon", "serde", "rand", "npy", "nightly"]}
 faer-ext = {version = "*", features = ["ndarray"]}
 num-traits = { version = "*" }
 approx = {version = "*" }
@@ -29,7 +29,7 @@ ndarray-linalg = {version = "*", features = ["intel-mkl"]}
 
 [target.'cfg(target_os = "macos")'.dependencies]
 ndarray = { version = "*", features = ["blas"]}
-ndarray-linalg = { version = "*" }
+ndarray-linalg = { version = "*"}
 
 [dev-dependencies]
 ndarray-linalg = {version = "*"}
