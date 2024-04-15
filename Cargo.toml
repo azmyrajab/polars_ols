@@ -15,7 +15,7 @@ pyo3-polars = { version = "*", features = ["derive"] }
 serde = { version = "*", features = ["derive"] }
 polars = { version = "*", features = ["performant", "lazy", "ndarray", "dtype-struct", "nightly"]}
 ndarray-rand = {version = "*"}
-pulp = {version = "*", features = ["nightly"]}
+pulp = {version = "0.18.10", features = ["nightly"]}
 faer = {version = "*", features = ["std", "rayon", "serde", "rand", "npy", "nightly"]}
 faer-ext = {version = "*", features = ["ndarray"]}
 num-traits = { version = "*" }
