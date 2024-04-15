@@ -99,23 +99,13 @@ jobs:
           buildcache: true
           color: true
           path: spack
-      - name: Install OpenSSL
-        run: spack install openssl@3.1
-      - name: Set up environment variables
-        run: |
-          export OPENSSL_DIR=$(spack location --install-dir openssl@3.1)
-          echo "OPENSSL_DIR=$OPENSSL_DIR" >> $GITHUB_ENV
-          cat $GITHUB_ENV
       - name: Build wheels
         uses: PyO3/maturin-action@v1
-        env:
-          OPENSSL_DIR: ${{ env.OPENSSL_DIR }}
         with:
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter
           sccache: 'true'
           manylinux: auto
-          docker-options: --env OPENSSL_DIR=${{ env.OPENSSL_DIR }}
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
