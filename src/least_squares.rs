@@ -665,6 +665,7 @@ impl RollingOLSState {
 /// * `use_woodbury` - An optional parameter specifying whether to use Woodbury matrix identity
 ///                    which propagates inv(XTX) directly. If not provided, it defaults to `false`.
 /// * `alpha` - An optional L2 regularization parameter. Defaults to 0.
+/// * `null_policy` - Specifies which null policy to implement. Defaults upstream to "drop".
 /// * `is_valid` - A slice of booleans indicating if each sample is valid.
 ///
 pub fn solve_rolling_ols(
