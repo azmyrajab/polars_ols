@@ -10,7 +10,7 @@ rustflags = [
     "-C", "target-feature=+aes,+avx,+avx2,+sse3,+fma,+ssse3",
 ]
 
-[target.aarch64-unknown-linux-gnu]
-rustflags = [
-    "-C", "target-feature=+sve,+fma",  # +neon,
-]
+#[target.aarch64-unknown-linux-gnu]
+#rustflags = [
+#    "-C", "target-feature=+sve,+fma,+neon",
+#]
