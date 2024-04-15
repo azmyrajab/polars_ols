@@ -831,7 +831,7 @@ pub fn solve_rolling_ols(
             let is_valid_i = is_valid[i];
             let is_valid_i_start = is_valid[i_start];
 
-            let n_valid = is_valid[i_start + 1..i + 1]
+            let n_valid_window = is_valid[i_start + 1..i + 1]
                 .iter()
                 .filter(|&&valid| valid)
                 .count();
@@ -850,7 +850,7 @@ pub fn solve_rolling_ols(
                     state.update(x_new, y_new, None, None);
                 }
                 // only update coefficients if the window contains at least min_period obs
-                if n_valid > 1 {
+                if n_valid_window >= n_valid {
                     coefficients_i = state.solve();
                 }
             } else if is_valid_i_start & !is_valid_i & (i >= window_size) {
@@ -859,7 +859,7 @@ pub fn solve_rolling_ols(
                 let y_prev = y[i_start];
                 state.subtract(x_prev, y_prev);
                 // only update coefficients if the window contains at least min_period obs
-                if n_valid > 1 {
+                if n_valid_window >= n_valid {
                     coefficients_i = state.solve();
                 }
             }
