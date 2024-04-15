@@ -34,6 +34,9 @@ ndarray-linalg = {version = "*", features = ["intel-mkl"]}
 ndarray = { version = "*", features = ["blas"]}
 ndarray-linalg = { version = "*"}
 
+[target.'cfg(target_arch = "arm")'.dependencies]
+faer = { version = "*"}  # don't allow nightly for ARM due to issues with NEON support
+
 [dev-dependencies]
 ndarray-linalg = {version = "*"}
 
