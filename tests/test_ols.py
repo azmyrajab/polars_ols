@@ -706,7 +706,7 @@ def test_rolling_least_squares(window_size: int, min_periods: int, use_woodbury:
                     window_size=window_size,
                     min_periods=min_periods,
                     use_woodbury=use_woodbury,
-                    null_policy="skip",
+                    null_policy="drop_window",  # equivalent to mode='missing' in statsmodels
                 )
                 .alias("coefficients")
             )
@@ -756,7 +756,10 @@ def test_rolling_window_drop(window_size: int):
         .select(
             "index",
             pl.col("y")
-            .least_squares.rolling_ols("x1", "x2", window_size=window_size, mode="predictions")
+            .least_squares.rolling_ols("x1", "x2",
+                                       window_size=window_size,
+                                       mode="predictions",
+                                       null_policy="drop")
             .alias("predictions_1"),
         )
         .join_asof(
