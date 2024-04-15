@@ -50,8 +50,8 @@ NullPolicy = Literal[
     "drop_zero",  # drops any rows with nulls in fitting, but then computes predictions
     # with zero filled features. Use this to allow for extrapolation.
     "drop_y_zero_x",  # only drops rows with null targets and fill any null features with zero
-    "skip",  # only relevant to rolling window regression: this causes any observations with null
-    # to be omitted and only valid observations within the fixed window are used.
+    "drop_window",  # only relevant to rolling window regression: this causes any observations
+    # with nulls to be omitted and only valid observations within the fixed window are used.
 ]
 OutputMode = Literal["predictions", "residuals", "coefficients"]
 SolveMethod = Literal["qr", "svd", "chol", "lu", "cd"]
@@ -106,8 +106,8 @@ class OLSKwargs(Kwargs):
 
     def __post_init__(self):
         # rust code does validate all options, but prefer to fail, on some, early
-        valid_ols_policies = _VALID_NULL_POLICIES - {"skip"}  # skip does not make
-        # sense outside of moving window models.
+        valid_ols_policies = _VALID_NULL_POLICIES - {"drop_window"}
+        # 'drop_window' is specific to rolling window models.
         assert (
             self.null_policy in valid_ols_policies
         ), f"'null_policy' must be one of {valid_ols_policies}. You passed: {self.null_policy}"
@@ -121,13 +121,14 @@ class RLSKwargs(Kwargs):
     """Specifies parameters of Recursive Least Squares models.
 
     Attributes:
-        half_life: Half-life parameter for exponential forgetting. Defaults to None
-            (no forgetting).
-        initial_state_covariance: Scalar representing which behaves like an L2 regularization
-                                  parameter. Larger values correspond to larger prior uncertainty
-                                  around mean vector of state (inversely proportional to strength
-                                  of equivalent L2 penalty). Defaults to 10.
-        initial_state_mean: Initial mean vector of the state. Defaults to None.
+        half_life: Half-life parameter for exponential forgetting. Defaults to None, which is
+                          equivalent to expanding window least-squares (no forgetting).
+        initial_state_mean: Denotes a prior for the mean value of the coefficients.
+                          It can be either a scalar or a list. Defaults to None (no prior).
+        initial_state_covariance: Scalar which denotes a prior of the uncertainty (variance)
+                          around `initial_state_mean`. It can be thought of as inversely
+                          proportional to the strength of an L2 penalty in a ridge regression.
+                          Defaults to 10, intended to be a weak 'diffuse' prior.
         null_policy: Strategy for handling missing data. Defaults to "drop".
     """
 
@@ -147,14 +148,14 @@ class RollingKwargs(Kwargs):
         use_woodbury: Whether to use Woodbury matrix identity for faster computation.
                       Defaults to True if num_features > 10.
         alpha: L2 Regularization strength. Default is 0.0.
-        null_policy: Strategy for handling missing data. Defaults to "ignore".
+        null_policy: Strategy for handling missing data. Defaults to "drop_window".
     """
 
     window_size: int = 1_000_000  # defaults to expanding OLS
     min_periods: Optional[int] = None
     use_woodbury: Optional[bool] = None
     alpha: Optional[float] = None  # optional ridge alpha
-    null_policy: NullPolicy = "drop"
+    null_policy: NullPolicy = "drop_window"
 
 
 def _pre_process_data(

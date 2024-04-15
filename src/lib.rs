@@ -1,5 +1,5 @@
-use pyo3::{pymodule, PyResult, Python};
 use pyo3::types::PyModule;
+use pyo3::{pymodule, PyResult, Python};
 
 #[cfg(target_os = "linux")]
 use jemallocator::Jemalloc;
@@ -18,9 +18,8 @@ mod tests {
 
     use crate::expressions::convert_polars_to_ndarray;
     use crate::least_squares::{
-        inv, NullPolicy, outer_product, solve_elastic_net, solve_ols,
-        solve_recursive_least_squares, solve_ridge, solve_rolling_ols, SolveMethod,
-        update_xtx_inv, woodbury_update,
+        inv, outer_product, solve_elastic_net, solve_ols, solve_recursive_least_squares,
+        solve_ridge, solve_rolling_ols, update_xtx_inv, woodbury_update, NullPolicy, SolveMethod,
     };
 
     fn make_data(null_policy: Option<NullPolicy>) -> (Array1<f64>, Array2<f64>) {
@@ -84,8 +83,14 @@ mod tests {
         let (targets, features) = make_data(None);
         let is_valid = vec![true; targets.len()];
 
-        let coefficients =
-            solve_recursive_least_squares(&targets, &features, Some(252.0), Some(0.01), None, &is_valid);
+        let coefficients = solve_recursive_least_squares(
+            &targets,
+            &features,
+            Some(252.0),
+            Some(0.01),
+            None,
+            &is_valid,
+        );
         let expected = array![1.0, 1.0];
         println!("{:?}", coefficients.slice(s![0, ..]));
         println!("{:?}", coefficients.slice(s![-1, ..]));

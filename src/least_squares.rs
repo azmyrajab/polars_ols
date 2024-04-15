@@ -58,7 +58,6 @@ impl FromStr for SolveMethod {
     }
 }
 
-
 #[derive(Debug, PartialEq)]
 pub enum NullPolicy {
     Zero,
@@ -84,7 +83,6 @@ impl FromStr for NullPolicy {
         }
     }
 }
-
 
 /// Solves ridge regression using Singular Value Decomposition (SVD).
 ///

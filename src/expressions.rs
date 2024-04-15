@@ -1,5 +1,4 @@
 #![allow(clippy::unit_arg, clippy::unused_unit)]
-use std::str::FromStr;
 use ndarray::{Array, Array1, Array2, Axis};
 use polars::datatypes::{DataType, Field, Float64Type};
 use polars::error::{polars_err, PolarsResult};
@@ -10,10 +9,11 @@ use polars::prelude::{
 };
 use pyo3_polars::derive::polars_expr;
 use serde::Deserialize;
+use std::str::FromStr;
 
 use crate::least_squares::{
     solve_elastic_net, solve_ols, solve_recursive_least_squares, solve_ridge, solve_rolling_ols,
-    SolveMethod, NullPolicy,
+    NullPolicy, SolveMethod,
 };
 
 /// convert a slice of polars series into a 2D feature array.

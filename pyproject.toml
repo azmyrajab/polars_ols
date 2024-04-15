@@ -80,7 +80,7 @@ lint.ignore = [
   "F401",
   "ISC001",
 ]
-lint.pylint.max-args = 6
+lint.pylint.max-args = 9
 
 [tool.black]
 target-version = ["py38", "py39", "py310", "py311"]
