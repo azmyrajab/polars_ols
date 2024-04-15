@@ -756,10 +756,9 @@ def test_rolling_window_drop(window_size: int):
         .select(
             "index",
             pl.col("y")
-            .least_squares.rolling_ols("x1", "x2",
-                                       window_size=window_size,
-                                       mode="predictions",
-                                       null_policy="drop")
+            .least_squares.rolling_ols(
+                "x1", "x2", window_size=window_size, mode="predictions", null_policy="drop"
+            )
             .alias("predictions_1"),
         )
         .join_asof(
