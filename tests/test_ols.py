@@ -684,10 +684,16 @@ def test_recursive_least_squares_prior():
     ],
 )
 def test_rolling_least_squares(window_size: int, min_periods: int, use_woodbury: bool):
-    import os
-
-    os.environ["POLARS_VERBOSE"] = "1"
     df = _make_data(n_samples=1_000)
+    rng = np.random.default_rng(0)
+
+    def insert_nulls(val):
+        return None if rng.random() < 0.1 else val
+
+    df = df.with_columns(
+        *(pl.col(c).map_elements(insert_nulls, return_dtype=pl.Float64) for c in ("y",))
+    )
+
     with timer("\nrolling ols"):
         coef_rolling = (
             df.lazy()
@@ -700,12 +706,12 @@ def test_rolling_least_squares(window_size: int, min_periods: int, use_woodbury:
                     window_size=window_size,
                     min_periods=min_periods,
                     use_woodbury=use_woodbury,
+                    null_policy="drop_window",  # equivalent to mode='missing' in statsmodels
                 )
                 .alias("coefficients")
             )
             .unnest("coefficients")
             .collect()
-            .to_numpy()
         )
     with timer("rolling ols statsmodels"):
         mdl = RollingOLS(
@@ -714,14 +720,65 @@ def test_rolling_least_squares(window_size: int, min_periods: int, use_woodbury:
             window=window_size,
             min_nobs=min_periods,
             expanding=True,
+            missing="drop",
         ).fit()
+        coef_statsmodels = (
+            pl.DataFrame(mdl.params, schema=["x1", "x2"])
+            .fill_nan(None)
+            .with_columns(pl.all().forward_fill())
+        )
+
     assert np.allclose(
-        coef_rolling,
-        mdl.params,
+        coef_rolling.to_numpy(),
+        coef_statsmodels.to_numpy(),
         rtol=1.0e-3,
         atol=1.0e-3,
         equal_nan=True,
     )
+
+
+@pytest.mark.parametrize("window_size", (21, 252))
+def test_rolling_window_drop(window_size: int):
+    df = _make_data(n_samples=1_000)
+    rng = np.random.default_rng(0)
+
+    def insert_nulls(val):
+        return None if rng.random() < 0.1 else val
+
+    df = df.with_columns(
+        *(pl.col(c).map_elements(insert_nulls, return_dtype=pl.Float64) for c in ("y",))
+    ).with_row_index()
+
+    df_drop = df.drop_nulls()
+
+    df_merged = (
+        df_drop.lazy()
+        .select(
+            "index",
+            pl.col("y")
+            .least_squares.rolling_ols(
+                "x1", "x2", window_size=window_size, mode="predictions", null_policy="drop"
+            )
+            .alias("predictions_1"),
+        )
+        .join_asof(
+            df.lazy().select(
+                "index",
+                pl.col("y")
+                .least_squares.rolling_ols(
+                    "x1",
+                    "x2",
+                    window_size=window_size,
+                    mode="predictions",
+                    null_policy="drop",
+                )
+                .alias("predictions_2"),
+            ),
+            on="index",
+        )
+    ).collect()
+
+    assert np.allclose(df_merged["predictions_1"], df_merged["predictions_2"], equal_nan=True)
 
 
 def test_moving_window_regressions_over():
