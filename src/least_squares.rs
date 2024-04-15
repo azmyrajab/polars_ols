@@ -1,5 +1,3 @@
-#![feature(stdarch_arm_neon_intrinsics)]
-
 use faer::linalg::solvers::SolverCore;
 use faer::prelude::*;
 use faer::Side;
