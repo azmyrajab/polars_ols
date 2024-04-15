@@ -668,6 +668,7 @@ impl RollingOLSState {
 /// * `null_policy` - Specifies which null policy to implement. Defaults upstream to "drop".
 /// * `is_valid` - A slice of booleans indicating if each sample is valid.
 ///
+#[allow(clippy::too_many_arguments)]
 pub fn solve_rolling_ols(
     y: &Array1<f64>,
     x: &Array2<f64>,
@@ -825,16 +826,14 @@ pub fn solve_rolling_ols(
                 if n_valid > 1 {
                     coefficients_i = state.solve();
                 }
-            } else if is_valid_i_start & !is_valid_i {
-                if i >= window_size {
-                    // only last observation is valid: subtract it
-                    let x_prev = x.row(i_start);
-                    let y_prev = y[i_start];
-                    state.subtract(x_prev, y_prev);
-                    // only update coefficients if the window contains at least min_period obs
-                    if n_valid > 1 {
-                        coefficients_i = state.solve();
-                    }
+            } else if is_valid_i_start & !is_valid_i & (i >= window_size) {
+                // only last observation is valid: subtract it
+                let x_prev = x.row(i_start);
+                let y_prev = y[i_start];
+                state.subtract(x_prev, y_prev);
+                // only update coefficients if the window contains at least min_period obs
+                if n_valid > 1 {
+                    coefficients_i = state.solve();
                 }
             }
 
