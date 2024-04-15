@@ -1,3 +1,4 @@
+#![feature(stdarch_arm_neon_intrinsics)]
 use pyo3::types::PyModule;
 use pyo3::{pymodule, PyResult, Python};
 
