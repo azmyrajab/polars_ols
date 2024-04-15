@@ -189,7 +189,7 @@ fn convert_option_vec_to_array1(opt_vec: Option<Vec<f64>>) -> Option<Array1<f64>
 fn compute_is_valid_mask(inputs: &[Series], null_policy: &NullPolicy) -> Option<BooleanChunked> {
     match null_policy {
         // Compute the intersection of all non-null rows across input series
-        NullPolicy::Drop | NullPolicy::DropZero | NullPolicy::Skip => {
+        NullPolicy::Drop | NullPolicy::DropZero | NullPolicy::DropWindow => {
             let is_valid_mask = inputs[0].is_not_null();
             Some(
                 inputs[1..]
@@ -256,7 +256,7 @@ fn handle_nulls(
                     .unwrap()
             }));
         }
-        NullPolicy::Drop | NullPolicy::DropZero | NullPolicy::Skip => {
+        NullPolicy::Drop | NullPolicy::DropZero | NullPolicy::DropWindow => {
             // Compute the intersection of all non-null rows across input series
             let is_valid_mask = is_valid_mask.unwrap();
             // Apply mask to all input series

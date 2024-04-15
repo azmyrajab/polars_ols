@@ -110,7 +110,7 @@ mod tests {
             Some(false),
             None,
             &is_valid,
-            NullPolicy::Skip,
+            NullPolicy::DropWindow,
         );
         let expected: Array1<f64> = array![1.0, 1.0];
         println!("{:?}", coefficients.slice(s![0, ..]));

@@ -65,7 +65,7 @@ pub enum NullPolicy {
     Ignore,
     DropZero,
     DropYZeroX,
-    Skip,
+    DropWindow,
 }
 
 impl FromStr for NullPolicy {
@@ -75,7 +75,7 @@ impl FromStr for NullPolicy {
         match input {
             "zero" => Ok(NullPolicy::Zero),
             "drop" => Ok(NullPolicy::Drop),
-            "skip" => Ok(NullPolicy::Skip),
+            "drop_window" => Ok(NullPolicy::DropWindow),
             "ignore" => Ok(NullPolicy::Ignore),
             "drop_y_zero_x" => Ok(NullPolicy::DropYZeroX),
             "drop_zero" => Ok(NullPolicy::DropZero),
@@ -823,7 +823,7 @@ pub fn solve_rolling_ols(
             }
         }
     } else {
-        // 2) handle 'skip' mode (this matches statsmodels: mode=drop)
+        // 2) handle 'drop_window' mode (this matches statsmodels: mode=drop)
         for i in min_periods..n {
             let i_start = i.saturating_sub(window_size);
             let is_valid_i = is_valid[i];
