@@ -1,5 +1,5 @@
 #![allow(clippy::unit_arg, clippy::unused_unit)]
-
+use std::str::FromStr;
 use ndarray::{Array, Array1, Array2, Axis};
 use polars::datatypes::{DataType, Field, Float64Type};
 use polars::error::{polars_err, PolarsResult};
@@ -10,11 +10,10 @@ use polars::prelude::{
 };
 use pyo3_polars::derive::polars_expr;
 use serde::Deserialize;
-use std::str::FromStr;
 
 use crate::least_squares::{
     solve_elastic_net, solve_ols, solve_recursive_least_squares, solve_ridge, solve_rolling_ols,
-    SolveMethod,
+    SolveMethod, NullPolicy,
 };
 
 /// convert a slice of polars series into a 2D feature array.
@@ -185,32 +184,6 @@ fn make_predictions(
 
 fn convert_option_vec_to_array1(opt_vec: Option<Vec<f64>>) -> Option<Array1<f64>> {
     opt_vec.map(Array1::from)
-}
-
-#[derive(Debug, PartialEq)]
-pub enum NullPolicy {
-    Zero,
-    Drop,
-    Ignore,
-    DropZero,
-    DropYZeroX,
-    Skip,
-}
-
-impl FromStr for NullPolicy {
-    type Err = ();
-
-    fn from_str(input: &str) -> Result<NullPolicy, Self::Err> {
-        match input {
-            "zero" => Ok(NullPolicy::Zero),
-            "drop" => Ok(NullPolicy::Drop),
-            "skip" => Ok(NullPolicy::Skip),
-            "ignore" => Ok(NullPolicy::Ignore),
-            "drop_y_zero_x" => Ok(NullPolicy::DropYZeroX),
-            "drop_zero" => Ok(NullPolicy::DropZero),
-            _ => Err(()),
-        }
-    }
 }
 
 fn compute_is_valid_mask(inputs: &[Series], null_policy: &NullPolicy) -> Option<BooleanChunked> {

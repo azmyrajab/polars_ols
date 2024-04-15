@@ -1,21 +1,27 @@
+use pyo3::{pymodule, PyResult, Python};
+use pyo3::types::PyModule;
+
+#[cfg(target_os = "linux")]
+use jemallocator::Jemalloc;
+
 mod expressions;
 pub mod least_squares;
-use pyo3::types::PyModule;
-use pyo3::{pymodule, PyResult, Python};
 
 #[cfg(test)]
 mod tests {
-    use crate::expressions::{convert_polars_to_ndarray, NullPolicy};
-    use crate::least_squares::{
-        inv, outer_product, solve_elastic_net, solve_ols, solve_recursive_least_squares,
-        solve_ridge, solve_rolling_ols, update_xtx_inv, woodbury_update, SolveMethod,
-    };
     use ndarray::prelude::*;
     use ndarray_linalg::assert_close_l2;
     use ndarray_rand::rand_distr::Normal;
     use ndarray_rand::RandomExt;
     use polars::datatypes::DataType::Float64;
     use polars::prelude::*;
+
+    use crate::expressions::convert_polars_to_ndarray;
+    use crate::least_squares::{
+        inv, NullPolicy, outer_product, solve_elastic_net, solve_ols,
+        solve_recursive_least_squares, solve_ridge, solve_rolling_ols, SolveMethod,
+        update_xtx_inv, woodbury_update,
+    };
 
     fn make_data(null_policy: Option<NullPolicy>) -> (Array1<f64>, Array2<f64>) {
         let null_policy = null_policy.unwrap_or(NullPolicy::Ignore);
@@ -76,8 +82,10 @@ mod tests {
     #[test]
     fn test_recursive_least_squares() {
         let (targets, features) = make_data(None);
+        let is_valid = vec![true; targets.len()];
+
         let coefficients =
-            solve_recursive_least_squares(&targets, &features, Some(252.0), Some(0.01), None);
+            solve_recursive_least_squares(&targets, &features, Some(252.0), Some(0.01), None, &is_valid);
         let expected = array![1.0, 1.0];
         println!("{:?}", coefficients.slice(s![0, ..]));
         println!("{:?}", coefficients.slice(s![-1, ..]));
@@ -87,6 +95,8 @@ mod tests {
     #[test]
     fn test_rolling_least_squares() {
         let (targets, features) = make_data(None);
+        let is_valid = vec![true; targets.len()];
+
         let coefficients = solve_rolling_ols(
             &targets,
             &features,
@@ -94,6 +104,8 @@ mod tests {
             Some(100usize),
             Some(false),
             None,
+            &is_valid,
+            NullPolicy::Skip,
         );
         let expected: Array1<f64> = array![1.0, 1.0];
         println!("{:?}", coefficients.slice(s![0, ..]));
@@ -150,9 +162,6 @@ mod tests {
         assert_close_l2!(&xtx_inv, &expected, 0.00001);
     }
 }
-
-#[cfg(target_os = "linux")]
-use jemallocator::Jemalloc;
 
 #[global_allocator]
 #[cfg(target_os = "linux")]

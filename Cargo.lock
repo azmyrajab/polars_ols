@@ -1888,7 +1888,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "polars_ols"
+name = "polars_ols_worktree"
 version = "0.3.0"
 dependencies = [
  "approx",

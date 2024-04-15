@@ -1,4 +1,3 @@
-use crate::expressions::NullPolicy;
 use faer::linalg::solvers::SolverCore;
 use faer::prelude::*;
 use faer::Side;
@@ -58,6 +57,34 @@ impl FromStr for SolveMethod {
         }
     }
 }
+
+
+#[derive(Debug, PartialEq)]
+pub enum NullPolicy {
+    Zero,
+    Drop,
+    Ignore,
+    DropZero,
+    DropYZeroX,
+    Skip,
+}
+
+impl FromStr for NullPolicy {
+    type Err = ();
+
+    fn from_str(input: &str) -> Result<NullPolicy, Self::Err> {
+        match input {
+            "zero" => Ok(NullPolicy::Zero),
+            "drop" => Ok(NullPolicy::Drop),
+            "skip" => Ok(NullPolicy::Skip),
+            "ignore" => Ok(NullPolicy::Ignore),
+            "drop_y_zero_x" => Ok(NullPolicy::DropYZeroX),
+            "drop_zero" => Ok(NullPolicy::DropZero),
+            _ => Err(()),
+        }
+    }
+}
+
 
 /// Solves ridge regression using Singular Value Decomposition (SVD).
 ///
