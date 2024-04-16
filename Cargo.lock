@@ -1049,6 +1049,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a960a9d20df9abedf2e136c087c8fcc29f693ed985349bb03fe00816de8b00d2"
 dependencies = [
  "accelerate-src",
+ "intel-mkl-src",
 ]
 
 [[package]]
@@ -1905,7 +1906,7 @@ dependencies = [
 
 [[package]]
 name = "polars_ols"
-version = "0.2.9"
+version = "0.3.0"
 dependencies = [
  "approx",
  "blas-src",

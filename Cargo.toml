@@ -2,7 +2,7 @@ cargo-features = ["profile-rustflags"]
 
 [package]
 name = "polars_ols"
-version = "0.2.9"
+version = "0.3.0"
 edition = "2021"
 
 [lib]
@@ -23,8 +23,9 @@ ndarray = { version = "*", features = ["matrixmultiply-threading"] }  # i.e. win
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
 [target.'cfg(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x64")))'.dependencies]
-blas-src = { version = "*", features = ["intel-mkl"] }
 ndarray = { version = "*", features = ["blas"] }
+blas-src = { version = "*", features = ["intel-mkl"] }
+lapack-src = {version = "*", features = ["intel-mkl"]}
 ndarray-linalg = { version = "*", features = ["intel-mkl"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
