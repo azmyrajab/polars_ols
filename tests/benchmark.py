@@ -184,9 +184,9 @@ if __name__ == "__main__":
     runner.bench_func("benchmark_elastic_net", benchmark_elastic_net, df)
     runner.bench_func("benchmark_recursive_least_squares", benchmark_recursive_least_squares, df)
     runner.bench_func("benchmark_rolling_least_squares", benchmark_rolling_least_squares, df)
-    #
-    # runner.bench_func("benchmark_least_squares_numpy_svd", benchmark_least_squares_numpy_svd, df)
-    # runner.bench_func("benchmark_least_squares_numpy_qr", benchmark_least_squares_numpy_qr, df)
+
+    runner.bench_func("benchmark_least_squares_numpy_qr", benchmark_least_squares_numpy_qr, df)
+    runner.bench_func("benchmark_least_squares_numpy_svd", benchmark_least_squares_numpy_svd, df)
     # runner.bench_func("benchmark_ridge_sklearn_cholesky", benchmark_ridge_sklearn, df, "cholesky")
     # runner.bench_func("benchmark_ridge_sklearn_svd", benchmark_ridge_sklearn, df, "svd")
     # runner.bench_func(
