@@ -10,7 +10,7 @@ install: venv
 
 install-release: venv
 	unset CONDA_PREFIX && \
-	source venv/bin/activate && maturin develop --release -m cargo.toml
+	source venv/bin/activate && maturin develop --release
 
 pre-commit: venv
 	cargo fmt --all && cargo clippy --all-features
