@@ -389,6 +389,7 @@ impl RecursiveLeastSquares {
             .assign(&(&self.p / self.forgetting_factor - k_.dot(&k_.t()) * r));
     }
 
+    #[allow(dead_code)]
     pub fn predict(&self, x: &Array1<f64>) -> f64 {
         x.dot(&self.coef)
     }
@@ -706,7 +707,7 @@ pub fn solve_rolling_ols(
 ) -> Array2<f64> {
     let n = x.shape()[0];
     let k = x.shape()[1]; // Number of independent variables
-    let mut min_periods = min_periods.unwrap_or(min(k, window_size));
+    let min_periods = min_periods.unwrap_or(min(k, window_size));
 
     // default to using woodbury if number of features is relatively large.
     let use_woodbury = use_woodbury.unwrap_or(k > 60);
@@ -723,18 +724,27 @@ pub fn solve_rolling_ols(
         )
     };
 
-    // Update 'min_periods' to point to the index location of the nth valid observation.
+    // Update 'min_periods_valid' to point to the index location of the nth valid observation.
     // E.g. if user passed min_periods=2 and data validity if [false, false, true, true, ...],
     // the updated value would be '3' (the 4th element).
+    let mut min_periods_valid = min_periods;
     let mut n_valid = 0;
     for (i, &valid) in is_valid.iter().enumerate() {
         if valid {
             n_valid += 1;
         }
         if n_valid == min_periods {
-            min_periods = i + 1;
+            min_periods_valid = i + 1;
             break;
         }
+    }
+
+    if n < max(n_valid, min_periods) {
+        println!(
+            "warning: number of valid observations detected is less than 'min_periods' set, \
+             returning NaN coefficients!"
+        );
+        return Array2::from_elem((n, k), f64::NAN);
     }
 
     // initialize a deque holding last 'window' valid indices
@@ -744,7 +754,7 @@ pub fn solve_rolling_ols(
     // valid observations.
     let mut xtx = Array2::<f64>::zeros((k, k));
     let mut xty = Array1::<f64>::zeros(k);
-    for i in 0..min_periods {
+    for i in 0..min_periods_valid {
         if is_valid[i] {
             let x_i = x.row(i); // K x 1
             let y_i = y[i];
@@ -777,7 +787,7 @@ pub fn solve_rolling_ols(
     let coef_warmup = state.solve();
     let mut coefficients_i = coef_warmup.clone();
     coefficients
-        .slice_mut(s![min_periods - 1, ..])
+        .slice_mut(s![min_periods_valid - 1, ..])
         .assign(&coef_warmup);
 
     // 1) handle 'drop' mode: this matches literally dropping invalid data,
@@ -788,7 +798,7 @@ pub fn solve_rolling_ols(
     ) {
         let mut is_saturated = is_valid_history.len() == window_size;
         // Slide the window and update coefficients
-        for i in min_periods..n {
+        for i in min_periods_valid..n {
             // update XTX w/ latest data point
             if is_valid[i] {
                 let x_new = x.row(i);
@@ -824,7 +834,7 @@ pub fn solve_rolling_ols(
         }
     } else {
         // 2) handle 'drop_window' mode (this matches statsmodels: mode=drop)
-        for i in min_periods..n {
+        for i in min_periods_valid..n {
             let i_start = i.saturating_sub(window_size);
             let is_valid_i = is_valid[i];
             let is_valid_i_start = is_valid[i_start];

@@ -183,28 +183,28 @@ This benchmark was run on randomly generated data with [pyperf](https://github.c
 <a id="bennchmark"></a>
 
 ### n_samples=2_000, n_features=5
-| Model                   | polars_ols         | Python Benchmark          | Benchmark Type        | Speed-up vs Python Benchmark |
-|-------------------------|--------------------|---------------------------|-----------------------|------------------------------|
-| Least Squares (QR)      | 300 us ± 7 us      | 1.01 ms ± 0.81 ms         | Numpy (QR)            | 3.4x                         |
-| Least Squares (SVD)     | 351 us ± 4 us      | 853 us ± 417 us           | Numpy (SVD)           | 2.4x                         |
-| Ridge (Cholesky)        | 279 us ± 6 us      | 1.63 ms ± 0.69 ms         | Sklearn (Cholesky)    | 5.8x                         |
-| Ridge (SVD)             | 351 us ± 5 us      | 1.95 ms ± 1.12 ms         | Sklearn (SVD)         | 5.6x                         |
-| Weighted Least Squares  | 531 us ± 4 us      | 2.54 ms ± 0.40 ms         | Statsmodels           | 4.8x                         |
-| Elastic Net (CD)        | 339 us ± 5 us      | 2.17 ms ± 0.77 ms         | Sklearn               | 6.4x                         |
-| Recursive Least Squares | 1.42 ms ± 0.02 ms | 18.5 ms ± 1.4 ms          | Statsmodels           | 13.0x                        |
-| Rolling Least Squares   | 2.78 ms ± 0.07 ms | 22.8 ms ± 0.2 ms          | Statsmodels           | 8.2x                         |
+| Model                   | polars_ols         | Python Benchmark   | Benchmark Type     | Speed-up vs Python Benchmark |
+|-------------------------|--------------------|--------------------|--------------------|------------------------------|
+| Least Squares (QR)      | 195 µs ± 6 µs      | 466 µs ± 104 µs    | Numpy (QR)         | 2.4x                         |
+| Least Squares (SVD)     | 247 µs ± 5 µs      | 395 µs ± 69 µs     | Numpy (SVD)        | 1.6x                         |
+| Ridge (Cholesky)        | 171 µs ± 8 µs      | 1.02 ms ± 0.29 ms  | Sklearn (Cholesky) | 5.9x                         |
+| Ridge (SVD)             | 238 µs ± 7 µs      | 1.12 ms ± 0.41 ms  | Sklearn (SVD)      | 4.7x                         |
+| Weighted Least Squares  | 334 µs ± 13 µs     | 2.04 ms ± 0.22 ms  | Statsmodels        | 6.1x                         |
+| Elastic Net (CD)        | 227 µs ± 7 µs      | 1.18 ms ± 0.19 ms  | Sklearn            | 5.2x                         |
+| Recursive Least Squares | 1.12 ms ± 0.23 ms  | 18.2 ms ± 1.6 ms   | Statsmodels        | 16.2x                        |
+| Rolling Least Squares   | 1.99 ms ± 0.03 ms  | 22.1 ms ± 0.2 ms   | Statsmodels        | 11.1x                        |
 
 ### n_samples=10_000, n_features=100
-| Model                   | polars_ols         | Python Benchmark      | Benchmark Type   | Speed-up vs Python Benchmark |
-|-------------------------|--------------------|-----------------------|------------------|------------------------------|
-| Least Squares (QR)      | 12.4 ms ± 0.2 ms   | 68.3 ms ± 13.7 ms     | Numpy (QR)       | 5.5x                         |
-| Least Squares (SVD)     | 14.5 ms ± 0.5 ms   | 44.9 ms ± 10.3 ms     | Numpy (SVD)      | 3.1x                         |
-| Ridge (Cholesky)        | 6.10 ms ± 0.14 ms  | 9.91 ms ± 2.86 ms     | Sklearn (Cholesky) | 1.6x                       |
-| Ridge (SVD)             | 24.9 ms ± 2.1 ms   | 390 ms ± 63 ms        | Sklearn (SVD)    | 15.7x                        |
-| Weighted Least Squares  | 14.8 ms ± 2.4 ms   | 114 ms ± 35 ms        | Statsmodels      | 7.7x                         |
-| Elastic Net (CD)        | 21.7 ms ± 1.2 ms   | 111 ms ± 54 ms        | Sklearn          | 5.1x                         |
-| Recursive Least Squares | 163 ms ± 28 ms     | 65.7 sec ± 28.2 sec   | Statsmodels      | 403.1x                       |
-| Rolling Least Squares   | 390 ms ± 10 ms     | 3.99 sec ± 0.54 sec   | Statsmodels      | 10.2x                        |
+| Model                   | polars_ols         | Python Benchmark          | Benchmark Type        | Speed-up vs Python Benchmark |
+|-------------------------|--------------------|---------------------------|-----------------------|------------------------------|
+| Least Squares (QR)      | 17.6 ms ± 0.3 ms  | 44.4 ms ± 9.3 ms          | Numpy (QR)            | 2.5x                         |
+| Least Squares (SVD)     | 23.8 ms ± 0.2 ms  | 26.6 ms ± 5.5 ms          | Numpy (SVD)           | 1.1x                         |
+| Ridge (Cholesky)        | 5.36 ms ± 0.16 ms | 475 ms ± 71 ms            | Sklearn (Cholesky)    | 88.7x                        |
+| Ridge (SVD)             | 30.2 ms ± 0.4 ms | 400 ms ± 48 ms            | Sklearn (SVD)         | 13.2x                        |
+| Weighted Least Squares  | 18.8 ms ± 0.3 ms | 80.4 ms ± 12.4 ms         | Statsmodels           | 4.3x                         |
+| Elastic Net (CD)        | 22.7 ms ± 0.2 ms | 138 ms ± 27 ms            | Sklearn               | 6.1x                         |
+| Recursive Least Squares | 270 ms ± 53 ms   | 57.8 sec ± 43.7 sec       | Statsmodels           | 1017.0x                      |
+| Rolling Least Squares   | 371 ms ± 13 ms   | 4.41 sec ± 0.17 sec       | Statsmodels           | 11.9x                        |
 
 - Numpy's `lstsq` (uses divide-and-conquer SVD) is already a highly optimized call into LAPACK and so the scope for speed-up is relatively limited,
 and the same applies to simple approaches like directly solving normal equations with Cholesky.
@@ -224,5 +224,5 @@ Credits & Related Projects
 
 Future Work / TODOs
 ------------
-- Support generic types, in rust implementations, so that both f32 and f64 types are recognized. Right now data is cast to f32 prior to estimation
-- Add more detailed documentation on supported models, signatures, and API
+- Support generic types, in rust implementations, so that both f32 and f64 types are recognized. Right now data is cast to f64 prior to estimation
+- Add docs explaining supported models, signatures, and API

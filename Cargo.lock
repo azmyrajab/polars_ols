@@ -3,6 +3,12 @@
 version = 3
 
 [[package]]
+name = "accelerate-src"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "415ed64958754dbe991900f3940677e6a7eefb4d7367afd70d642677b0c7d19d"
+
+[[package]]
 name = "adler"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -138,6 +144,7 @@ version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b95e83dc868db96e69795c0213143095f03de9dd3252f205d4ac716e4076a7e0"
 dependencies = [
+ "accelerate-src",
  "intel-mkl-src",
 ]
 
@@ -1036,6 +1043,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lapack-src"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a960a9d20df9abedf2e136c087c8fcc29f693ed985349bb03fe00816de8b00d2"
+dependencies = [
+ "accelerate-src",
+]
+
+[[package]]
 name = "lapack-sys"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1888,14 +1904,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "polars_ols_worktree"
-version = "0.2.9"
+name = "polars_ols"
+version = "0.3.0"
 dependencies = [
  "approx",
  "blas-src",
  "faer",
  "faer-ext",
  "jemallocator",
+ "lapack-src",
  "ndarray",
  "ndarray-linalg",
  "ndarray-rand",

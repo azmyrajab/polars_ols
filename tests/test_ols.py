@@ -737,6 +737,40 @@ def test_rolling_least_squares(window_size: int, min_periods: int, use_woodbury:
     )
 
 
+@pytest.mark.parametrize(
+    "min_periods,expected",
+    [
+        (999, 2),
+        (1_000, 1),
+        (1_001, 0),
+    ],
+)
+def test_rolling_ols_insufficient_data(min_periods: int, expected: int):
+    df = _make_data(n_samples=1_000)
+
+    with timer("\nrolling ols"):
+        coef_rolling = (
+            df.lazy()
+            .select(
+                pl.col("y")
+                .least_squares.rolling_ols(
+                    pl.col("x1"),
+                    pl.col("x2"),
+                    mode="coefficients",
+                    window_size=2_000,
+                    min_periods=min_periods,
+                    use_woodbury=False,
+                    null_policy="drop_window",  # equivalent to mode='missing' in statsmodels
+                )
+                .alias("coefficients")
+            )
+            .unnest("coefficients")
+            .collect()
+        )
+
+    assert coef_rolling.count().max_horizontal().item() == expected
+
+
 @pytest.mark.parametrize("window_size", (21, 252))
 def test_rolling_window_drop(window_size: int):
     df = _make_data(n_samples=1_000)

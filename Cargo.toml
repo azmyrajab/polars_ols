@@ -2,7 +2,7 @@ cargo-features = ["profile-rustflags"]
 
 [package]
 name = "polars_ols"
-version = "0.2.9"
+version = "0.3.0"
 edition = "2021"
 
 [lib]
@@ -29,7 +29,9 @@ ndarray-linalg = { version = "*", features = ["intel-mkl"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 ndarray = { version = "*", features = ["blas"] }
-ndarray-linalg = { version = "*" }
+blas-src = { version = "*", features = ["accelerate"] }
+lapack-src = { version = "*", features = ["accelerate"] }
+ndarray-linalg = { version = "*"}
 
 [target.'cfg(target_arch = "arm")'.dependencies]
 faer = { version = "*" }  # don't allow nightly for ARM due to issues with NEON support
@@ -45,6 +47,3 @@ ndarray-linalg = { version = "*" }
 
 [profile.dev.package.faer]
 opt-level = 3
-
-[profile.release]
-lto = "thin"
