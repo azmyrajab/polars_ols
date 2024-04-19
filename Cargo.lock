@@ -1930,7 +1930,6 @@ dependencies = [
  "blas-src",
  "faer",
  "faer-ext",
- "intel-mkl-src",
  "jemallocator",
  "lapack-src",
  "lapack-sys",
