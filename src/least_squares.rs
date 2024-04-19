@@ -8,8 +8,8 @@ use std::collections::VecDeque;
 use std::str::FromStr;
 
 #[cfg(any(
-all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x64")),
-target_os = "macos"
+    all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x64")),
+    target_os = "macos"
 ))]
 use lapack::dgelsd;
 
@@ -143,7 +143,6 @@ fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1
     solve_ridge_svd(y, x, 1.0e-64, rcond) // near zero ridge penalty
 }
 
-
 /// Solves least-squares regression using divide and conquer SVD. Thin wrapper to LAPACK: DGESLD.
 #[cfg(any(
     all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x64")),
@@ -163,13 +162,12 @@ fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1
     let mut b = if n > m {
         // we need to resize b because n_features > n_samples
         let mut b = Array1::<f64>::zeros((n,));
-        b.slice_mut(s![0..m]).assign(&y);
+        b.slice_mut(s![0..m]).assign(y);
         b
     } else {
         y.clone()
     };
     let b = b.as_slice_memory_order_mut().unwrap();
-
 
     // Make a mutable copy of x, in fortran order
     let mut a = vec![0.; m * n];
@@ -290,7 +288,6 @@ pub fn solve_ols(
         solve_ols_svd(y, x, rcond)
     }
 }
-
 
 /// Solves least-squares regression using LU with partial pivoting
 #[inline]
