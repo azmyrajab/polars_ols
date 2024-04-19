@@ -172,12 +172,12 @@ def benchmark_recursive_least_squares_statsmodels(data: pl.DataFrame):
 
 
 if __name__ == "__main__":
-    # example: python tests/benchmark.py --quiet --fast
+    # example: python tests/benchmark.py --quiet --rigorous
     # we run the benchmarks in python (as opposed to rust) so that overhead of pyO3 is included
     df = _make_data(n_features=5, n_samples=2_000)
     runner = pyperf.Runner()
 
-    # runner.bench_func("benchmark_least_squares_qr", benchmark_least_squares, df, "qr")
+    runner.bench_func("benchmark_least_squares_qr", benchmark_least_squares, df, "qr")
     runner.bench_func("benchmark_least_squares_svd", benchmark_least_squares, df, "svd")
     # runner.bench_func("benchmark_ridge_cholesky", benchmark_ridge, df, "chol")
     # runner.bench_func("benchmark_ridge_svd", benchmark_ridge, df, "svd")
@@ -188,7 +188,7 @@ if __name__ == "__main__":
     # runner.bench_func("benchmark_recursive_least_squares", benchmark_recursive_least_squares, df)
     # runner.bench_func("benchmark_rolling_least_squares", benchmark_rolling_least_squares, df)
 
-    # runner.bench_func("benchmark_least_squares_numpy_qr", benchmark_least_squares_numpy_qr, df)
+    runner.bench_func("benchmark_least_squares_numpy_qr", benchmark_least_squares_numpy_qr, df)
     runner.bench_func("benchmark_least_squares_numpy_svd", benchmark_least_squares_numpy_svd, df)
     # runner.bench_func("benchmark_ridge_sklearn_cholesky", benchmark_ridge_sklearn, df, "cholesky")
     # runner.bench_func("benchmark_ridge_sklearn_svd", benchmark_ridge_sklearn, df, "svd")

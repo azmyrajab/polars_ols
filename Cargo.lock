@@ -1053,17 +1053,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lapack"
-version = "0.19.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad676a6b4df7e76a9fd80a0c50c619a3948d6105b62a0ab135f064d99c51d207"
-dependencies = [
- "lapack-sys",
- "libc",
- "num-complex",
-]
-
-[[package]]
 name = "lapack-src"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1943,7 +1932,6 @@ dependencies = [
  "faer-ext",
  "intel-mkl-src",
  "jemallocator",
- "lapack",
  "lapack-src",
  "lapack-sys",
  "ndarray",

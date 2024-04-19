@@ -11,7 +11,7 @@ use std::str::FromStr;
     all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x64")),
     target_os = "macos"
 ))]
-use lapack::dgelsd;
+use lapack_sys::dgelsd_;
 
 /// Invert square matrix input using either Cholesky or LU decomposition
 pub fn inv(array: &Array2<f64>, use_cholesky: bool) -> Array2<f64> {
@@ -155,8 +155,8 @@ fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1
     let nrhs = 1; // Number of right hand sides, here we have only one target variable
     let k = m.min(n);
 
-    assert!(x.is_standard_layout());
-    assert!(y.is_standard_layout());
+    debug_assert!(x.is_standard_layout());
+    debug_assert!(y.is_standard_layout());
 
     // Make a mutable copy of y, as LAPACK will overwrite it
     let mut b = if n > m {
@@ -189,22 +189,25 @@ fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1
     let mut iwork = vec![0];
     let mut work = vec![0.0];
 
+    let m = m as i32;
+    let n = n as i32;
+
     // 1- Do Workspace query
     unsafe {
-        dgelsd(
-            m as i32,
-            n as i32,
-            nrhs,
-            &mut a,
-            lda,
-            b,
-            ldb,
-            s.as_mut_slice(),
-            rcond,
+        dgelsd_(
+            &m,
+            &n,
+            &nrhs,
+            a.as_mut_ptr(),
+            &lda,
+            b.as_mut_ptr(),
+            &ldb,
+            s.as_mut_slice().as_mut_ptr(),
+            &rcond,
             &mut rank,
-            &mut work,
-            -1, // Workspace query
-            &mut iwork,
+            work.as_mut_ptr(),
+            &(-1), // Workspace query
+            iwork.as_mut_ptr(),
             &mut info,
         )
     };
@@ -216,26 +219,26 @@ fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1
 
     // 2- Do actual computation
     unsafe {
-        dgelsd(
-            m as i32,
-            n as i32,
-            nrhs,
-            &mut a,
-            lda,
-            b,
-            ldb,
-            &mut s,
-            rcond,
+        dgelsd_(
+            &m,
+            &n,
+            &nrhs,
+            a.as_mut_ptr(),
+            &lda,
+            b.as_mut_ptr(),
+            &ldb,
+            s.as_mut_slice().as_mut_ptr(),
+            &rcond,
             &mut rank,
-            &mut work,
-            lwork as i32,
-            &mut iwork,
+            work.as_mut_ptr(),
+            &(lwork as i32),
+            iwork.as_mut_ptr(),
             &mut info,
         )
     };
     assert_eq!(info, 0, "Failed to compute SVD solution!");
 
-    ArrayView1::from(&b.to_vec()[..n]).to_owned()
+    ArrayView1::from(&b.to_vec()[..n as usize]).to_owned()
     // x.least_squares(y)
     //     .expect("Failed to compute LAPACK SVD solution!")
     //     .solution

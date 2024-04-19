@@ -22,4 +22,4 @@ test: venv
 	venv/bin/python -m pytest tests
 
 benchmark: venv
-	venv/bin/python tests/benchmark.py --quiet
+	venv/bin/python tests/benchmark.py --quiet --rigorous

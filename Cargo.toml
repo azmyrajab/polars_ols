@@ -28,14 +28,12 @@ intel-mkl-src = {version = "*", features = ["mkl-dynamic-ilp64-iomp"]}
 blas-src = { version = "*", features = ["intel-mkl"] }
 lapack-src = {version = "*", features = ["intel-mkl"]}
 lapack-sys = {version = "*"}
-lapack = {version = "*"}
 
 [target.'cfg(target_os = "macos")'.dependencies]
 ndarray = { version = "*", features = ["blas"] }
 blas-src = { version = "*", features = ["accelerate"] }
 lapack-src = { version = "*", features = ["accelerate"] }
 lapack-sys = {version = "*"}
-lapack = {version = "*"}
 
 [target.'cfg(target_arch = "arm")'.dependencies]
 faer = { version = "*" }  # don't allow nightly for ARM due to issues with NEON support
