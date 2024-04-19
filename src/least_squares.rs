@@ -2,11 +2,16 @@ use faer::linalg::solvers::SolverCore;
 use faer::prelude::*;
 use faer::Side;
 use faer_ext::{IntoFaer, IntoNdarray};
-use lapack::dgelsd;
 use ndarray::{array, s, Array, Array1, Array2, ArrayView1, Axis, NewAxis};
 use std::cmp::{max, min};
 use std::collections::VecDeque;
 use std::str::FromStr;
+
+#[cfg(any(
+all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x64")),
+target_os = "macos"
+))]
+use lapack::dgelsd;
 
 /// Invert square matrix input using either Cholesky or LU decomposition
 pub fn inv(array: &Array2<f64>, use_cholesky: bool) -> Array2<f64> {
@@ -155,8 +160,16 @@ fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1
     assert!(y.is_standard_layout());
 
     // Make a mutable copy of y, as LAPACK will overwrite it
-    let mut b = y.clone();
+    let mut b = if n > m {
+        // we need to resize b because n_features > n_samples
+        let mut b = Array1::<f64>::zeros((n,));
+        b.slice_mut(s![0..m]).assign(&y);
+        b
+    } else {
+        y.clone()
+    };
     let b = b.as_slice_memory_order_mut().unwrap();
+
 
     // Make a mutable copy of x, in fortran order
     let mut a = vec![0.; m * n];
@@ -223,8 +236,8 @@ fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1
         )
     };
     assert_eq!(info, 0, "Failed to compute SVD solution!");
-    ArrayView1::from(&b.to_vec()[..n]).to_owned()
 
+    ArrayView1::from(&b.to_vec()[..n]).to_owned()
     // x.least_squares(y)
     //     .expect("Failed to compute LAPACK SVD solution!")
     //     .solution
