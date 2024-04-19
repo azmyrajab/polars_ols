@@ -10,7 +10,7 @@ name = "polars_ols"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "*", features = ["extension-module", "abi3-py38"] }  # set > py38 supported version
+pyo3 = { version = "*", features = ["extension-module", "abi3-py38", "gil-refs"] }  # set > py38 supported version
 pyo3-polars = { version = "*", features = ["derive"] }
 serde = { version = "*", features = ["derive"] }
 polars = { version = "*", features = ["performant", "lazy", "ndarray", "dtype-struct", "nightly"] }

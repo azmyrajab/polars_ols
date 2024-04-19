@@ -156,7 +156,7 @@ fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1
 
     // Make a mutable copy of y, as LAPACK will overwrite it
     let mut b = y.clone();
-    let mut b = b.as_slice_memory_order_mut().unwrap();
+    let b = b.as_slice_memory_order_mut().unwrap();
 
     // Make a mutable copy of x, in fortran order
     let mut a = vec![0.; m * n];
@@ -186,7 +186,7 @@ fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1
             nrhs,
             &mut a,
             lda,
-            &mut b,
+            b,
             ldb,
             s.as_mut_slice(),
             rcond,
@@ -211,7 +211,7 @@ fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1
             nrhs,
             &mut a,
             lda,
-            &mut b,
+            b,
             ldb,
             &mut s,
             rcond,
