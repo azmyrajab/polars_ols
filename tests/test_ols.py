@@ -1,30 +1,19 @@
-import time
-from contextlib import contextmanager
 from typing import Optional
 
 import numpy as np
 import polars as pl
 import pytest
 import statsmodels.formula.api as smf
-from sklearn.linear_model import ElasticNet, Ridge
-from statsmodels.regression.rolling import RollingOLS
-
 from polars_ols import (
     OLSKwargs,
+    NullPolicy,
+    SolveMethod,
     compute_least_squares,
     compute_least_squares_from_formula,
 )
-from polars_ols.least_squares import NullPolicy, SolveMethod
-
-
-@contextmanager
-def timer(msg: Optional[str] = None, precision: int = 3) -> float:
-    start = time.perf_counter()
-    end = start
-    yield lambda: end - start
-    msg = f"{msg or 'Took'}: {(time.perf_counter() - start) * 1_000:.{precision}f} ms"
-    print(msg)
-    end = time.perf_counter()
+from polars_ols.utils import timer
+from sklearn.linear_model import ElasticNet, Ridge
+from statsmodels.regression.rolling import RollingOLS
 
 
 def _make_data(
@@ -32,13 +21,14 @@ def _make_data(
     n_features: int = 2,
     n_groups: Optional[int] = None,
     scale: float = 0.1,
+    sparsity: float = 0.0,
 ) -> pl.DataFrame:
     rng = np.random.default_rng(0)
     x = rng.normal(size=(n_samples, n_features))
     eps = rng.normal(size=n_samples, scale=scale)
 
     df = pl.DataFrame(data=x, schema=[f"x{i + 1}" for i in range(n_features)]).with_columns(
-        y=pl.lit(x.sum(1) + eps)
+        y=pl.lit(x[:, :int(n_features * (1. - sparsity))].sum(1) + eps)
     )
 
     if n_groups is not None:
@@ -529,31 +519,49 @@ def test_least_squares_namespace():
     assert np.allclose(df.corr(), 1.0)
 
 
-def test_elastic_net():
-    df = _make_data()
-    mdl = ElasticNet(fit_intercept=False, alpha=0.1, l1_ratio=0.5, max_iter=1_000, tol=0.0001)
-    mdl.fit(df.select(pl.all().exclude("y")), df.select("y"))
+@pytest.mark.parametrize("n_features,sparsity,alpha,solve_method",
+                         [
+                             (2, 0., 0.1, "cd"),
+                             (100, 0.5, 0.3, "cd"),
+                             (300, 0.5, 1.0, "cd"),
+                             (500, 0.9, 0.1, "cd"),
+                             (1_000, 0.9, 0.3, "cd_active_set"),
+                          ]
+                         )
+def test_elastic_net(n_features: int,
+                     sparsity: float,
+                     alpha: float,
+                     solve_method: SolveMethod):
+    df = _make_data(n_features=n_features, sparsity=sparsity)
+    features = df.select(pl.all().exclude("y")).columns
 
-    coef = (
-        df.lazy()
-        .select(
-            pl.col("y")
-            .least_squares.from_formula(
-                "x1 + x2 -1",
-                mode="coefficients",
-                l1_ratio=0.5,
-                alpha=0.1,
-                max_iter=1_000,
-                tol=0.0001,
+    with timer("\nelastic net sklearn"):
+        mdl = ElasticNet(fit_intercept=False, alpha=alpha, l1_ratio=0.5,
+                         max_iter=1_000, tol=0.0001)
+        x, y = df.select(*features), df.select("y")
+        mdl.fit(x, y)
+        predictions_1 = mdl.predict(x).flatten()
+
+    with timer("elastic net polars-ols"):
+        predictions_2  = (
+            df.lazy()
+            .select(
+                pl.col("y")
+                .least_squares.elastic_net(
+                    *features,
+                    mode="predictions",
+                    l1_ratio=0.5,
+                    alpha=alpha,
+                    max_iter=1_000,
+                    tol=0.0001,
+                    solve_method=solve_method,
+                )
             )
-            .alias("coefficients")
+            .collect()
+            .to_numpy()
+            .flatten()
         )
-        .unnest("coefficients")
-        .collect()
-        .to_numpy()
-        .flatten()
-    )
-    assert np.allclose(mdl.coef_, coef, rtol=1.0e-4, atol=1.0e-4)
+    assert np.allclose(predictions_1, predictions_2, rtol=1.0e-4, atol=1.0e-4)
 
 
 def test_elastic_net_non_negative():

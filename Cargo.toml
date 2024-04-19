@@ -17,13 +17,14 @@ polars = { version = "*", features = ["performant", "lazy", "ndarray", "dtype-st
 ndarray-rand = { version = "*" }
 num-traits = { version = "*" }
 approx = { version = "*" }
-ndarray = { version = "*", features = ["matrixmultiply-threading"] }  # i.e. windows / linux arm etc.
+ndarray = { version = "*", features = ["matrixmultiply-threading"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
 [target.'cfg(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x64")))'.dependencies]
 ndarray = { version = "*", features = ["blas"] }
+intel-mkl-src = {version = "*", features = ["mkl-dynamic-ilp64-iomp"]}
 blas-src = { version = "*", features = ["intel-mkl"] }
 lapack-src = {version = "*", features = ["intel-mkl"]}
 ndarray-linalg = { version = "*", features = ["intel-mkl"] }

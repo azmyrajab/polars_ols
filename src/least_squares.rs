@@ -34,13 +34,14 @@ pub fn inv(array: &Array2<f64>, use_cholesky: bool) -> Array2<f64> {
         .to_owned()
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum SolveMethod {
     QR,
     SVD,
     Cholesky,
     LU,
     CD, // coordinate-descent for elastic net problem
+    CDActiveSet, // coordinate-descent w/ active set
 }
 
 impl FromStr for SolveMethod {
@@ -53,6 +54,7 @@ impl FromStr for SolveMethod {
             "chol" => Ok(SolveMethod::Cholesky),
             "lu" => Ok(SolveMethod::LU),
             "cd" => Ok(SolveMethod::CD),
+            "cd_active_set" => Ok(SolveMethod::CDActiveSet),
             _ => Err(()),
         }
     }
@@ -151,6 +153,20 @@ fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1
         .solution
 }
 
+
+fn solve_ols_qr(y: &Array1<f64>, x: &Array2<f64>) -> Array1<f64> {
+    // compute least squares solution via QR
+    let x_faer = x.view().into_faer();
+    let y_faer = y.slice(s![.., NewAxis]).into_faer();
+    let coefficients = x_faer.col_piv_qr().solve_lstsq(&y_faer);
+    coefficients
+        .as_ref()
+        .into_ndarray()
+        .slice(s![.., 0])
+        .to_owned()
+}
+
+
 /// Solves an ordinary least squares problem using either QR (faer) or LAPACK SVD
 /// Inputs: features (2d ndarray), targets (1d ndarray), and an optional enum denoting solve method
 /// Outputs: 1-d OLS coefficients
@@ -179,14 +195,7 @@ pub fn solve_ols(
 
     if solve_method == SolveMethod::QR {
         // compute least squares solution via QR
-        let x_faer = x.view().into_faer();
-        let y_faer = y.slice(s![.., NewAxis]).into_faer();
-        let coefficients = x_faer.col_piv_qr().solve_lstsq(&y_faer);
-        coefficients
-            .as_ref()
-            .into_ndarray()
-            .slice(s![.., 0])
-            .to_owned()
+        solve_ols_qr(y, x)
     } else {
         solve_ols_svd(y, x, rcond)
     }
@@ -208,6 +217,7 @@ fn solve_normal_equations(
     xtx: &Array2<f64>,
     xty: &Array1<f64>,
     solve_method: Option<SolveMethod>,
+    fallback_solve_method: Option<SolveMethod>,
 ) -> Array1<f64> {
     // Attempt to solve via Cholesky decomposition by default
     let solve_method = solve_method.unwrap_or(SolveMethod::Cholesky);
@@ -227,8 +237,26 @@ fn solve_normal_equations(
                 }
                 Err(_) => {
                     // Cholesky decomposition failed, fallback to SVD
-                    println!("Cholesky decomposition failed, falling back to SVD");
-                    solve_ols_svd(xty, xtx, None)
+                    let fallback_solve_method = fallback_solve_method.unwrap_or(
+                        SolveMethod::SVD);
+
+                    match fallback_solve_method {
+                        SolveMethod::SVD => {
+                            println!("Cholesky decomposition failed, falling back to SVD");
+                            solve_ols_svd(xty, xtx, None)
+                        },
+                        SolveMethod::LU => {
+                            println!("Cholesky decomposition failed, \
+                            falling back to LU w/ pivoting");
+                            solve_ols_lu(xty, xtx)
+                        }
+                        SolveMethod::QR => {
+                            println!("Cholesky decomposition failed, falling back to QR");
+                            solve_ols_qr(xty, xtx)
+                        }
+                        _ => panic!("unsupported fallback solve method: {:?}",
+                                    fallback_solve_method)
+                    }
                 }
             }
         }
@@ -259,7 +287,10 @@ pub fn solve_ridge(
             let eye = Array::eye(x_t_x.shape()[0]);
             let ridge_matrix = &x_t_x + &eye * alpha;
             // use cholesky if specifically chosen, and otherwise LU.
-            solve_normal_equations(&ridge_matrix, &x_t_y, solve_method)
+            solve_normal_equations(&ridge_matrix, &x_t_y, solve_method,
+                                   Some(SolveMethod::LU)  // if cholesky fails fallback to LU
+
+            )
         }
         Some(SolveMethod::SVD) => solve_ridge_svd(y, x, alpha, rcond),
         _ => panic!(
@@ -296,10 +327,10 @@ pub fn solve_elastic_net(
     let max_iter = max_iter.unwrap_or(1_000);
     let tol = tol.unwrap_or(0.00001);
     let positive = positive.unwrap_or(false);
+    let solve_method = solve_method.unwrap_or(SolveMethod::CD);
 
     match solve_method {
-        Some(SolveMethod::CD) => {}
-        None => {}
+        SolveMethod::CD | SolveMethod::CDActiveSet => {}
         _ => panic!(
             "Only solve_method 'CD' (coordinate descent) is currently supported \
         for Elastic Net / Lasso problems."
@@ -317,27 +348,75 @@ pub fn solve_elastic_net(
     let mut residuals = y.to_owned(); // Initialize residuals
     let alpha = alpha * n_samples as f64;
 
-    for _ in 0..max_iter {
-        let w_old = w.clone();
-        for j in 0..n_features {
-            let xj = x.slice(s![.., j]);
-            // Naive update: add contribution of current feature to residuals
-            residuals = &residuals + &xj * w[j];
-            w[j] = soft_threshold(&xj.dot(&residuals.view()), alpha * l1_ratio, positive)
-                / (xtx[[j, j]] + alpha * (1.0 - l1_ratio));
-            // Naive update: subtract contribution of current feature from residuals
-            residuals = &residuals - &xj * w[j];
+    // Do cyclic coordinate descent
+    if solve_method == SolveMethod::CD {
+        for _ in 0..max_iter {
+            let w_old = w.clone();
+            for j in 0..n_features {
+                let xj = x.slice(s![.., j]);
+                // Naive update: add contribution of current feature to residuals
+                residuals = &residuals + &xj * w[j];
+                // Apply soft thresholding: compute updated weights
+                w[j] = soft_threshold(&xj.dot(&residuals.view()), alpha * l1_ratio, positive)
+                    / (xtx[[j, j]] + alpha * (1.0 - l1_ratio));
+                // Naive update: subtract contribution of current feature from residuals
+                residuals = &residuals - &xj * w[j];
+            }
+
+            if (&w - &w_old)
+                .view()
+                .insert_axis(Axis(0))
+                .into_faer()
+                .norm_l2()
+                < tol
+            {
+                break;
+            }
         }
-        if (&w - &w_old)
-            .view()
-            .insert_axis(Axis(0))
-            .into_faer()
-            .norm_l2()
-            < tol
-        {
-            break;
+    } else { // Do Coordinate Descent w/ Active Set
+        // Initialize active set indices
+        let mut active_indices: Vec<usize> = (0..n_features).collect();
+
+        for _ in 0..max_iter {
+            let w_old = w.clone();
+
+            // // randomly shuffle a copy of the active set
+            // let mut active_indices_shuffle = active_indices.clone();
+            // let mut rng = rand::thread_rng();
+            // active_indices_shuffle.shuffle(&mut rng);
+
+            for j in active_indices.clone() {
+                let xj = x.slice(s![.., j]);
+                // Naive update: add contribution of current feature to residuals
+                residuals = &residuals + &xj * w[j];
+
+                // Apply soft thresholding: compute updated weights
+                w[j] = soft_threshold(&xj.dot(&residuals.view()), alpha * l1_ratio, positive)
+                    / (xtx[[j, j]] + alpha * (1.0 - l1_ratio));
+
+                // Naive update: subtract contribution of current feature from residuals
+                residuals = &residuals - &xj * w[j];
+
+                // Check if weight for feature j has converged to zero and remove index from active set
+                if w[j].abs() < tol {
+                    if let Ok(pos) = active_indices.binary_search(&j) {
+                        active_indices.remove(pos);
+                    }
+                }
+            }
+
+            if (&w - &w_old)
+                .view()
+                .insert_axis(Axis(0))
+                .into_faer()
+                .norm_l2()
+                < tol
+            {
+                break;
+            }
         }
     }
+
     w
 }
 
@@ -580,7 +659,7 @@ impl RollingOLSUpdate for NonWoodburyState {
     }
 
     fn solve(&mut self) -> Array1<f64> {
-        solve_normal_equations(&self.xtx, &self.xty, None)
+        solve_normal_equations(&self.xtx, &self.xty, None, Some(SolveMethod::LU))
     }
 }
 

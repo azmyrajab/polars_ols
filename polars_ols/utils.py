@@ -1,12 +1,21 @@
 from __future__ import annotations
 
+import time
+from contextlib import contextmanager
 from functools import lru_cache, reduce
-from typing import TYPE_CHECKING, Sequence, Tuple
+from typing import TYPE_CHECKING, Sequence, Tuple, Optional
 
 import polars as pl
 
 if TYPE_CHECKING:
     from polars.type_aliases import IntoExpr, PolarsDataType
+
+
+__all__ = [
+    "parse_into_expr",
+    "build_expressions_from_patsy_formula",
+    "timer",
+]
 
 
 def parse_into_expr(
@@ -98,3 +107,13 @@ def build_expressions_from_patsy_formula(
             expr = reduce((lambda x, y: x * pl.col(y)), (f.code for f in term.factors), pl.lit(1))
             expressions.append(expr.alias(":".join(f.code for f in term.factors)))
     return expressions, add_intercept
+
+
+@contextmanager
+def timer(msg: Optional[str] = None, precision: int = 3) -> float:
+    start = time.perf_counter()
+    end = start
+    yield lambda: end - start
+    msg = f"{msg or 'Took'}: {(time.perf_counter() - start) * 1_000:.{precision}f} ms"
+    print(msg)
+    end = time.perf_counter()
