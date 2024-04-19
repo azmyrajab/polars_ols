@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from contextlib import contextmanager
 from functools import lru_cache, reduce
-from typing import TYPE_CHECKING, Sequence, Tuple, Optional
+from typing import TYPE_CHECKING, Optional, Sequence, Tuple
 
 import polars as pl
 

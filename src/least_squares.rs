@@ -2,16 +2,11 @@ use faer::linalg::solvers::SolverCore;
 use faer::prelude::*;
 use faer::Side;
 use faer_ext::{IntoFaer, IntoNdarray};
+use lapack::dgelsd;
 use ndarray::{array, s, Array, Array1, Array2, ArrayView1, Axis, NewAxis};
 use std::cmp::{max, min};
 use std::collections::VecDeque;
 use std::str::FromStr;
-
-#[cfg(any(
-    all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x64")),
-    target_os = "macos"
-))]
-use ndarray_linalg::LeastSquaresSvd;
 
 /// Invert square matrix input using either Cholesky or LU decomposition
 pub fn inv(array: &Array2<f64>, use_cholesky: bool) -> Array2<f64> {
@@ -40,7 +35,7 @@ pub enum SolveMethod {
     SVD,
     Cholesky,
     LU,
-    CD, // coordinate-descent for elastic net problem
+    CD,          // coordinate-descent for elastic net problem
     CDActiveSet, // coordinate-descent w/ active set
 }
 
@@ -98,6 +93,7 @@ impl FromStr for NullPolicy {
 /// # Returns
 ///
 /// * Result of ridge regression as a 1-dimensional array.
+#[inline]
 fn solve_ridge_svd(
     y: &Array1<f64>,
     x: &Array2<f64>,
@@ -142,18 +138,100 @@ fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1
     solve_ridge_svd(y, x, 1.0e-64, rcond) // near zero ridge penalty
 }
 
+
+/// Solves least-squares regression using divide and conquer SVD. Thin wrapper to LAPACK: DGESLD.
 #[cfg(any(
     all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x64")),
     target_os = "macos"
 ))]
-#[allow(unused_variables)]
+#[inline]
 fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1<f64> {
-    x.least_squares(y)
-        .expect("Failed to compute LAPACK SVD solution!")
-        .solution
+    let m = x.len_of(Axis(0)); // Number of rows of matrix A
+    let n = x.len_of(Axis(1)); // Number of columns of matrix A
+    let nrhs = 1; // Number of right hand sides, here we have only one target variable
+    let k = m.min(n);
+
+    assert!(x.is_standard_layout());
+    assert!(y.is_standard_layout());
+
+    // Make a mutable copy of y, as LAPACK will overwrite it
+    let mut b = y.clone();
+    let mut b = b.as_slice_memory_order_mut().unwrap();
+
+    // Make a mutable copy of x, in fortran order
+    let mut a = vec![0.; m * n];
+    for j in 0..n {
+        for i in 0..m {
+            a[i + j * m] = x[[i, j]]; // Assign the element of x to the corresponding index in a
+        }
+    }
+
+    let lda = m as i32; // Leading dimension of A, should be at least m
+    let ldb = max(m, n) as i32; // Leading dimension of B, should be at least max(m, n)
+
+    let mut s = vec![0.0; k]; // Singular values of A in decreasing order
+
+    let rcond = rcond.unwrap_or(-1.0); // Machine precision
+    let mut rank = 0; // Effective rank of A
+    let mut info = 0; // Status variable
+
+    let mut iwork = vec![0];
+    let mut work = vec![0.0];
+
+    // 1- Do Workspace query
+    unsafe {
+        dgelsd(
+            m as i32,
+            n as i32,
+            nrhs,
+            &mut a,
+            lda,
+            &mut b,
+            ldb,
+            s.as_mut_slice(),
+            rcond,
+            &mut rank,
+            &mut work,
+            -1, // Workspace query
+            &mut iwork,
+            &mut info,
+        )
+    };
+
+    assert_eq!(info, 0, "Workspace query failed");
+    let lwork = work[0] as usize;
+    let mut work = vec![0.; lwork];
+    let mut iwork = vec![0; iwork[0] as usize];
+
+    // 2- Do actual computation
+    unsafe {
+        dgelsd(
+            m as i32,
+            n as i32,
+            nrhs,
+            &mut a,
+            lda,
+            &mut b,
+            ldb,
+            &mut s,
+            rcond,
+            &mut rank,
+            &mut work,
+            lwork as i32,
+            &mut iwork,
+            &mut info,
+        )
+    };
+    assert_eq!(info, 0, "Failed to compute SVD solution!");
+    ArrayView1::from(&b.to_vec()[..n]).to_owned()
+
+    // x.least_squares(y)
+    //     .expect("Failed to compute LAPACK SVD solution!")
+    //     .solution
 }
 
-
+/// Solves least-squares regression using QR decomposition w/ pivoting.
+#[inline]
 fn solve_ols_qr(y: &Array1<f64>, x: &Array2<f64>) -> Array1<f64> {
     // compute least squares solution via QR
     let x_faer = x.view().into_faer();
@@ -165,7 +243,6 @@ fn solve_ols_qr(y: &Array1<f64>, x: &Array2<f64>) -> Array1<f64> {
         .slice(s![.., 0])
         .to_owned()
 }
-
 
 /// Solves an ordinary least squares problem using either QR (faer) or LAPACK SVD
 /// Inputs: features (2d ndarray), targets (1d ndarray), and an optional enum denoting solve method
@@ -201,6 +278,9 @@ pub fn solve_ols(
     }
 }
 
+
+/// Solves least-squares regression using LU with partial pivoting
+#[inline]
 fn solve_ols_lu(y: &Array1<f64>, x: &Array2<f64>) -> Array1<f64> {
     let x_faer = x.view().into_faer();
     x_faer
@@ -213,6 +293,7 @@ fn solve_ols_lu(y: &Array1<f64>, x: &Array2<f64>) -> Array1<f64> {
 }
 
 /// Solves the normal equations: (X^T X) coefficients = X^T Y
+#[inline]
 fn solve_normal_equations(
     xtx: &Array2<f64>,
     xty: &Array1<f64>,
@@ -237,25 +318,28 @@ fn solve_normal_equations(
                 }
                 Err(_) => {
                     // Cholesky decomposition failed, fallback to SVD
-                    let fallback_solve_method = fallback_solve_method.unwrap_or(
-                        SolveMethod::SVD);
+                    let fallback_solve_method = fallback_solve_method.unwrap_or(SolveMethod::SVD);
 
                     match fallback_solve_method {
                         SolveMethod::SVD => {
                             println!("Cholesky decomposition failed, falling back to SVD");
                             solve_ols_svd(xty, xtx, None)
-                        },
+                        }
                         SolveMethod::LU => {
-                            println!("Cholesky decomposition failed, \
-                            falling back to LU w/ pivoting");
+                            println!(
+                                "Cholesky decomposition failed, \
+                            falling back to LU w/ pivoting"
+                            );
                             solve_ols_lu(xty, xtx)
                         }
                         SolveMethod::QR => {
                             println!("Cholesky decomposition failed, falling back to QR");
                             solve_ols_qr(xty, xtx)
                         }
-                        _ => panic!("unsupported fallback solve method: {:?}",
-                                    fallback_solve_method)
+                        _ => panic!(
+                            "unsupported fallback solve method: {:?}",
+                            fallback_solve_method
+                        ),
                     }
                 }
             }
@@ -271,6 +355,7 @@ fn solve_normal_equations(
 
 /// Solves a ridge regression problem of the form: ||y - x B|| + alpha * ||B||
 /// Inputs: features (2d ndarray), targets (1d ndarray), ridge alpha scalar
+#[inline]
 pub fn solve_ridge(
     y: &Array1<f64>,
     x: &Array2<f64>,
@@ -287,9 +372,11 @@ pub fn solve_ridge(
             let eye = Array::eye(x_t_x.shape()[0]);
             let ridge_matrix = &x_t_x + &eye * alpha;
             // use cholesky if specifically chosen, and otherwise LU.
-            solve_normal_equations(&ridge_matrix, &x_t_y, solve_method,
-                                   Some(SolveMethod::LU)  // if cholesky fails fallback to LU
-
+            solve_normal_equations(
+                &ridge_matrix,
+                &x_t_y,
+                solve_method,
+                Some(SolveMethod::LU), // if cholesky fails fallback to LU
             )
         }
         Some(SolveMethod::SVD) => solve_ridge_svd(y, x, alpha, rcond),
@@ -373,7 +460,8 @@ pub fn solve_elastic_net(
                 break;
             }
         }
-    } else { // Do Coordinate Descent w/ Active Set
+    } else {
+        // Do Coordinate Descent w/ Active Set
         // Initialize active set indices
         let mut active_indices: Vec<usize> = (0..n_features).collect();
 

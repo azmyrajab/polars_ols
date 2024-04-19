@@ -17,6 +17,7 @@ from typing import (
 )
 
 from polars.plugins import register_plugin_function
+
 from polars_ols.utils import build_expressions_from_patsy_formula, parse_into_expr
 
 if TYPE_CHECKING:

@@ -15,19 +15,20 @@ def _make_data(n_samples: int = 2_000, n_features: int = 5, sparsity: float = 0.
     x = np.random.normal(size=(n_samples, n_features))
     eps = np.random.normal(size=n_samples, scale=0.1)
     return pl.DataFrame(data=x, schema=[f"x{i + 1}" for i in range(n_features)]).with_columns(
-        y=pl.lit(x[:, :int(n_features * (1. - sparsity))].sum(1) + eps)
+        y=pl.lit(x[:, : int(n_features * (1.0 - sparsity))].sum(1) + eps)
     )
 
 
 def benchmark_least_squares(data: pl.DataFrame, solve_method: SolveMethod = "qr"):
     return (
         data.lazy()
-        .with_columns((pl.col("y")
-                       .least_squares.ols(
-            pl.all().exclude("y"), solve_method=solve_method
+        .with_columns(
+            (
+                pl.col("y")
+                .least_squares.ols(pl.all().exclude("y"), solve_method=solve_method)
+                .alias("predictions")
+            )
         )
-                       .alias("predictions"))
-                      )
         .collect()
     )
 
@@ -100,8 +101,7 @@ def benchmark_wls_from_formula_statsmodels(data: pl.DataFrame):
     return data.lazy().with_columns(predictions=pl.lit(predictions)).collect()
 
 
-def benchmark_elastic_net(data: pl.DataFrame,
-                          solve_method: SolveMethod = "cd_active_set"):
+def benchmark_elastic_net(data: pl.DataFrame, solve_method: SolveMethod = "cd_active_set"):
     return (
         data.lazy()
         .with_columns(
@@ -174,22 +174,22 @@ def benchmark_recursive_least_squares_statsmodels(data: pl.DataFrame):
 if __name__ == "__main__":
     # example: python tests/benchmark.py --quiet --fast
     # we run the benchmarks in python (as opposed to rust) so that overhead of pyO3 is included
-    df = _make_data(n_features=100, n_samples=5_000, sparsity=0.9)
+    df = _make_data(n_features=5, n_samples=2_000)
     runner = pyperf.Runner()
 
     # runner.bench_func("benchmark_least_squares_qr", benchmark_least_squares, df, "qr")
-    # runner.bench_func("benchmark_least_squares_svd", benchmark_least_squares, df, "svd")
+    runner.bench_func("benchmark_least_squares_svd", benchmark_least_squares, df, "svd")
     # runner.bench_func("benchmark_ridge_cholesky", benchmark_ridge, df, "chol")
     # runner.bench_func("benchmark_ridge_svd", benchmark_ridge, df, "svd")
     # runner.bench_func("benchmark_wls_from_formula", benchmark_wls_from_formula, df)
-    runner.bench_func("benchmark_elastic_net", benchmark_elastic_net, df, "cd")
-    runner.bench_func("benchmark_elastic_net_active_set", benchmark_elastic_net, df,
-                      "cd_active_set")
+    # runner.bench_func("benchmark_elastic_net", benchmark_elastic_net, df, "cd")
+    # runner.bench_func("benchmark_elastic_net_active_set", benchmark_elastic_net, df,
+    #                   "cd_active_set")
     # runner.bench_func("benchmark_recursive_least_squares", benchmark_recursive_least_squares, df)
     # runner.bench_func("benchmark_rolling_least_squares", benchmark_rolling_least_squares, df)
 
     # runner.bench_func("benchmark_least_squares_numpy_qr", benchmark_least_squares_numpy_qr, df)
-    # runner.bench_func("benchmark_least_squares_numpy_svd", benchmark_least_squares_numpy_svd, df)
+    runner.bench_func("benchmark_least_squares_numpy_svd", benchmark_least_squares_numpy_svd, df)
     # runner.bench_func("benchmark_ridge_sklearn_cholesky", benchmark_ridge_sklearn, df, "cholesky")
     # runner.bench_func("benchmark_ridge_sklearn_svd", benchmark_ridge_sklearn, df, "svd")
     # runner.bench_func(
