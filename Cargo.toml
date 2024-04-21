@@ -24,10 +24,10 @@ jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
 [target.'cfg(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x64")))'.dependencies]
 ndarray = { version = "*", features = ["blas"] }
+intel-mkl-src = {version = "*", features = ["mkl-static-lp64-iomp"]}
 blas-src = { version = "*", features = ["intel-mkl"] }
 lapack-src = {version = "*", features = ["intel-mkl"]}
 lapack-sys = {version = "*"}
-ndarray-linalg = {version = "*", features = ["intel-mkl-static"]}
 
 [target.'cfg(target_os = "macos")'.dependencies]
 ndarray = { version = "*", features = ["blas"] }

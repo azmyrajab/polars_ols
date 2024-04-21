@@ -7,6 +7,12 @@ use std::cmp::{max, min};
 use std::collections::VecDeque;
 use std::str::FromStr;
 
+#[cfg(any(
+    all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x64")),
+    target_os = "macos"
+))]
+use lapack_sys::dgelsd_;
+
 /// Invert square matrix input using either Cholesky or LU decomposition
 pub fn inv(array: &Array2<f64>, use_cholesky: bool) -> Array2<f64> {
     let m = array.view().into_faer();
@@ -188,7 +194,7 @@ fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1
 
     // 1- Do workspace query
     unsafe {
-        lapack_sys::dgelsd_(
+        dgelsd_(
             &m,
             &n,
             &nrhs,
@@ -213,7 +219,7 @@ fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1
 
     // 2- Do actual computation
     unsafe {
-        lapack_sys::dgelsd_(
+        dgelsd_(
             &m,
             &n,
             &nrhs,
