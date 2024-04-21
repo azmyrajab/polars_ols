@@ -11,8 +11,7 @@ use std::str::FromStr;
     all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x64")),
     target_os = "macos"
 ))]
-use ndarray_linalg::LeastSquaresSvd;
-// use lapack_sys::dgelsd_;
+use lapack_sys::dgelsd_;
 
 /// Invert square matrix input using either Cholesky or LU decomposition
 pub fn inv(array: &Array2<f64>, use_cholesky: bool) -> Array2<f64> {
@@ -152,99 +151,98 @@ fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1
 #[allow(unused_variables)]
 #[inline]
 fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1<f64> {
-    // let m = x.len_of(Axis(0)); // Number of rows of matrix A
-    // let n = x.len_of(Axis(1)); // Number of columns of matrix A
-    // let nrhs = 1; // Number of right hand sides, here we have only one target variable
-    // let k = m.min(n);
-    //
-    // debug_assert!(x.is_standard_layout());
-    // debug_assert!(y.is_standard_layout());
-    //
-    // // Make a mutable copy of y, as LAPACK will overwrite it
-    // let mut b = if n > m {
-    //     // we need to resize b because n_features > n_samples
-    //     let mut b = Array1::<f64>::zeros((n,));
-    //     b.slice_mut(s![0..m]).assign(y);
-    //     b
-    // } else {
-    //     y.clone()
-    // };
-    // let b = b.as_slice_memory_order_mut().unwrap();
-    //
-    // // Make a mutable copy of x, in fortran order
-    // let mut a = vec![0.; m * n];
-    // for j in 0..n {
-    //     for i in 0..m {
-    //         a[i + j * m] = x[[i, j]]; // Assign the element of x to the corresponding index in a
-    //     }
-    // }
-    //
-    // let lda = m as i32; // Leading dimension of A, should be at least m
-    // let ldb = max(m, n) as i32; // Leading dimension of B, should be at least max(m, n)
-    //
-    // let mut s = vec![0.0; k]; // Singular values of A in decreasing order
-    //
-    // let rcond = rcond.unwrap_or(-1.0); // Machine precision
-    // let mut rank = 0; // Effective rank of A
-    // let mut info = 0; // Status variable
-    //
-    // let mut iwork = vec![0];
-    // let mut work = vec![0.0];
-    //
-    // let m = m as i32;
-    // let n = n as i32;
-    //
-    // // 1- Do workspace query
-    // unsafe {
-    //     dgelsd_(
-    //         &m,
-    //         &n,
-    //         &nrhs,
-    //         a.as_mut_ptr(),
-    //         &lda,
-    //         b.as_mut_ptr(),
-    //         &ldb,
-    //         s.as_mut_slice().as_mut_ptr(),
-    //         &rcond,
-    //         &mut rank,
-    //         work.as_mut_ptr(),
-    //         &(-1), // Workspace query
-    //         iwork.as_mut_ptr(),
-    //         &mut info,
-    //     )
-    // };
-    //
-    // assert_eq!(info, 0, "Workspace query failed");
-    // let lwork = work[0] as usize;
-    // let mut work = vec![0.; lwork];
-    // let mut iwork = vec![0; iwork[0] as usize];
-    //
-    // // 2- Do actual computation
-    // unsafe {
-    //     dgelsd_(
-    //         &m,
-    //         &n,
-    //         &nrhs,
-    //         a.as_mut_ptr(),
-    //         &lda,
-    //         b.as_mut_ptr(),
-    //         &ldb,
-    //         s.as_mut_slice().as_mut_ptr(),
-    //         &rcond,
-    //         &mut rank,
-    //         work.as_mut_ptr(),
-    //         &(lwork as i32),
-    //         iwork.as_mut_ptr(),
-    //         &mut info,
-    //     )
-    // };
-    // assert_eq!(info, 0, "Failed to compute SVD solution!");
-    //
-    // ArrayView1::from(&b.to_vec()[..n as usize]).to_owned()
+    let m = x.len_of(Axis(0)); // Number of rows of matrix A
+    let n = x.len_of(Axis(1)); // Number of columns of matrix A
+    let nrhs = 1; // Number of right hand sides, here we have only one target variable
+    let k = m.min(n);
 
-    x.least_squares(y)
-        .expect("Failed to compute LAPACK SVD solution!")
-        .solution
+    debug_assert!(x.is_standard_layout());
+    debug_assert!(y.is_standard_layout());
+
+    // Make a mutable copy of y, as LAPACK will overwrite it
+    let mut b = if n > m {
+        // we need to resize b because n_features > n_samples
+        let mut b = Array1::<f64>::zeros((n,));
+        b.slice_mut(s![0..m]).assign(y);
+        b
+    } else {
+        y.clone()
+    };
+    let b = b.as_slice_memory_order_mut().unwrap();
+
+    // Make a mutable copy of x, in fortran order
+    let mut a = vec![0.; m * n];
+    for j in 0..n {
+        for i in 0..m {
+            a[i + j * m] = x[[i, j]]; // Assign the element of x to the corresponding index in a
+        }
+    }
+
+    let lda = m as i32; // Leading dimension of A, should be at least m
+    let ldb = max(m, n) as i32; // Leading dimension of B, should be at least max(m, n)
+
+    let mut s = vec![0.0; k]; // Singular values of A in decreasing order
+
+    let rcond = rcond.unwrap_or(-1.0); // Machine precision
+    let mut rank = 0; // Effective rank of A
+    let mut info = 0; // Status variable
+
+    let mut iwork = vec![0];
+    let mut work = vec![0.0];
+
+    let m = m as i32;
+    let n = n as i32;
+
+    // 1- Do workspace query
+    unsafe {
+        dgelsd_(
+            &m,
+            &n,
+            &nrhs,
+            a.as_mut_ptr(),
+            &lda,
+            b.as_mut_ptr(),
+            &ldb,
+            s.as_mut_slice().as_mut_ptr(),
+            &rcond,
+            &mut rank,
+            work.as_mut_ptr(),
+            &(-1), // Workspace query
+            iwork.as_mut_ptr(),
+            &mut info,
+        )
+    };
+
+    assert_eq!(info, 0, "Workspace query failed");
+    let lwork = work[0] as usize;
+    let mut work = vec![0.; lwork];
+    let mut iwork = vec![0; iwork[0] as usize];
+
+    // 2- Do actual computation
+    unsafe {
+        dgelsd_(
+            &m,
+            &n,
+            &nrhs,
+            a.as_mut_ptr(),
+            &lda,
+            b.as_mut_ptr(),
+            &ldb,
+            s.as_mut_slice().as_mut_ptr(),
+            &rcond,
+            &mut rank,
+            work.as_mut_ptr(),
+            &(lwork as i32),
+            iwork.as_mut_ptr(),
+            &mut info,
+        )
+    };
+    assert_eq!(info, 0, "Failed to compute SVD solution!");
+    ArrayView1::from(&b.to_vec()[..n as usize]).to_owned()
+
+    // x.least_squares(y)
+    //     .expect("Failed to compute LAPACK SVD solution!")
+    //     .solution
 }
 
 /// Solves least-squares regression using QR decomposition w/ pivoting.
