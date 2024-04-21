@@ -1078,6 +1078,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f96a229d9557112e574164f8024ce703625ad9f88a90964c1780809358e53da"
 dependencies = [
  "cauchy",
+ "intel-mkl-src",
  "katexit",
  "lapack-sys",
  "num-traits",
@@ -1933,7 +1934,6 @@ dependencies = [
  "intel-mkl-src",
  "jemallocator",
  "lapack-src",
- "lapack-sys",
  "ndarray",
  "ndarray-linalg",
  "ndarray-rand",
