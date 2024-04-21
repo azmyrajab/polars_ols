@@ -18,23 +18,21 @@ ndarray-rand = { version = "*" }
 num-traits = { version = "*" }
 approx = { version = "*" }
 ndarray = { version = "*", features = ["matrixmultiply-threading"] }
-lapack-sys = {version = "*"}
 
 [target.'cfg(target_os = "linux")'.dependencies]
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
 [target.'cfg(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x64")))'.dependencies]
 ndarray = { version = "*", features = ["blas"] }
-intel-mkl-src = {version = "*", features = ["mkl-static-lp64-iomp"]}
 blas-src = { version = "*", features = ["intel-mkl"]}
 lapack-src = {version = "*", features = ["intel-mkl"]}
-lapack = {version = "*"}
+ndarray-linalg = {version = "*", features = ["intel-mkl"]}
 
 [target.'cfg(target_os = "macos")'.dependencies]
 ndarray = { version = "*", features = ["blas"] }
 blas-src = { version = "*", features = ["accelerate"] }
 lapack-src = { version = "*", features = ["accelerate"] }
-lapack = {version = "*"}
+ndarray-linalg = {version = "*"}
 
 [target.'cfg(target_arch = "arm")'.dependencies]
 faer = { version = "*" }  # don't allow nightly for ARM due to issues with NEON support
