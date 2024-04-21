@@ -24,7 +24,7 @@ jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
 [target.'cfg(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x64")))'.dependencies]
 ndarray = { version = "*", features = ["blas"] }
-intel-mkl-src = {version = "*", features = ["mkl-static-lp64-iomp"], default-features = false}
+# intel-mkl-src = {version = "*", features = ["mkl-static-lp64-iomp"], default-features = false}
 blas-src = { version = "*", features = ["intel-mkl"] , default-features = false}
 lapack-src = {version = "*", features = ["intel-mkl"], default-features = false}
 # lapack-sys = {version = "*"}

@@ -149,6 +149,7 @@ fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1
     all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x64")),
     target_os = "macos"
 ))]
+#[allow(unused_variables)]
 #[inline]
 fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1<f64> {
     // let m = x.len_of(Axis(0)); // Number of rows of matrix A
