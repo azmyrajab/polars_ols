@@ -11,7 +11,7 @@ use std::str::FromStr;
     all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x64")),
     target_os = "macos"
 ))]
-use lapack_sys::dgelsd_;
+use lapack::dgelsd;
 
 /// Invert square matrix input using either Cholesky or LU decomposition
 pub fn inv(array: &Array2<f64>, use_cholesky: bool) -> Array2<f64> {
@@ -195,20 +195,20 @@ fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1
 
     // 1- Do workspace query
     unsafe {
-        dgelsd_(
-            &m,
-            &n,
-            &nrhs,
-            a.as_mut_ptr(),
-            &lda,
-            b.as_mut_ptr(),
-            &ldb,
-            s.as_mut_slice().as_mut_ptr(),
-            &rcond,
+        dgelsd(
+            m,
+            n,
+            nrhs,
+            &mut a,
+            lda,
+            b,
+            ldb,
+            s.as_mut_slice(),
+            rcond,
             &mut rank,
-            work.as_mut_ptr(),
-            &(-1), // Workspace query
-            iwork.as_mut_ptr(),
+            &mut work,
+            -1, // Workspace query
+            &mut iwork,
             &mut info,
         )
     };
@@ -220,20 +220,20 @@ fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1
 
     // 2- Do actual computation
     unsafe {
-        dgelsd_(
-            &m,
-            &n,
-            &nrhs,
-            a.as_mut_ptr(),
-            &lda,
-            b.as_mut_ptr(),
-            &ldb,
-            s.as_mut_slice().as_mut_ptr(),
-            &rcond,
+        dgelsd(
+            m,
+            n,
+            nrhs,
+            &mut a,
+            lda,
+            b,
+            ldb,
+            s.as_mut_slice(),
+            rcond,
             &mut rank,
-            work.as_mut_ptr(),
-            &(lwork as i32),
-            iwork.as_mut_ptr(),
+            &mut work,
+            lwork as i32,
+            &mut iwork,
             &mut info,
         )
     };
