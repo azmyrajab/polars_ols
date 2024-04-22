@@ -18,11 +18,12 @@ from typing import (
 
 from polars.plugins import register_plugin_function
 
+from polars_ols.utils import build_expressions_from_patsy_formula, parse_into_expr
+
 if TYPE_CHECKING:
     import polars as pl
     from polars.type_aliases import IntoExpr
 
-from polars_ols.utils import build_expressions_from_patsy_formula, parse_into_expr
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ NullPolicy = Literal[
     # with nulls to be omitted and only valid observations within the fixed window are used.
 ]
 OutputMode = Literal["predictions", "residuals", "coefficients"]
-SolveMethod = Literal["qr", "svd", "chol", "lu", "cd"]
+SolveMethod = Literal["qr", "svd", "chol", "lu", "cd", "cd_active_set"]
 
 _VALID_NULL_POLICIES: Set[NullPolicy] = set(get_args(NullPolicy))
 _VALID_OUTPUT_MODES: Set[OutputMode] = set(get_args(OutputMode))

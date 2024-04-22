@@ -27,12 +27,13 @@ fn construct_features_array(inputs: &[Series], fill_zero: bool) -> Array2<f64> {
         .for_each(|(j, mut col)| {
             if fill_zero {
                 // Convert Series to ndarray
-                let filled = inputs[j]
+                let s = inputs[j]
                     .cast(&DataType::Float64)
                     .expect("failed to cast inputs to f64")
                     .fill_null(FillNullStrategy::Zero)
                     .unwrap();
-                let s = filled
+                let s = s.rechunk();
+                let s = s
                     .f64()
                     .unwrap()
                     // .expect("Failed to convert polars series to f64 array")
@@ -43,6 +44,7 @@ fn construct_features_array(inputs: &[Series], fill_zero: bool) -> Array2<f64> {
                 let s = inputs[j]
                     .cast(&DataType::Float64)
                     .expect("failed to cast inputs to f64");
+                let s = s.rechunk();
                 // Convert Series to ndarray
                 let s = s
                     .f64()
@@ -73,6 +75,7 @@ pub fn convert_polars_to_ndarray(
     let y = filtered_inputs[0]
         .cast(&DataType::Float64)
         .expect("Failed to cast targets series to f64");
+    let y = y.rechunk();
     let y = y
         .f64()
         .expect("Failed to convert polars series to f64 array")
