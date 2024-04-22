@@ -24,6 +24,8 @@ if TYPE_CHECKING:
     import polars as pl
     from polars.type_aliases import IntoExpr
 
+    ExprOrStr = Union[pl.Expr, str]
+
 
 logger = logging.getLogger(__name__)
 
@@ -160,9 +162,9 @@ class RollingKwargs(Kwargs):
 
 
 def _pre_process_data(
-    target: pl.Expr,
-    *features: pl.Expr,
-    sample_weights: Optional[pl.Expr],
+    target: ExprOrStr,
+    *features: ExprOrStr,
+    sample_weights: Optional[ExprOrStr],
     add_intercept: bool,
 ):
     """Pre-processes the input data by adding an intercept to features and applying sample weights,
@@ -188,15 +190,15 @@ def _pre_process_data(
     # handle sample weights
     sqrt_w: Optional[pl.Expr] = None
     if sample_weights is not None:
-        sqrt_w = sample_weights.sqrt()
+        sqrt_w = parse_into_expr(sample_weights).sqrt()
         target *= sqrt_w
         features = [(expr * sqrt_w) for expr in features]
     return target, features, sqrt_w
 
 
 def _register_least_squares_plugin(
-    target: pl.Expr,
-    *features: pl.Expr,
+    target: ExprOrStr,
+    *features: ExprOrStr,
     mode: OutputMode,
     function_name: str,
     ols_kwargs: Kwargs,
@@ -282,9 +284,9 @@ def compute_least_squares(
 
 
 def compute_recursive_least_squares(
-    target: IntoExpr,
-    *features: pl.Expr,
-    sample_weights: Optional[pl.Expr] = None,
+    target: ExprOrStr,
+    *features: ExprOrStr,
+    sample_weights: Optional[ExprOrStr] = None,
     add_intercept: bool = False,
     mode: OutputMode = "predictions",
     rls_kwargs: Optional[RLSKwargs] = None,
@@ -321,9 +323,9 @@ def compute_recursive_least_squares(
 
 
 def compute_rolling_least_squares(
-    target: IntoExpr,
-    *features: pl.Expr,
-    sample_weights: Optional[pl.Expr] = None,
+    target: ExprOrStr,
+    *features: ExprOrStr,
+    sample_weights: Optional[ExprOrStr] = None,
     add_intercept: bool = False,
     mode: OutputMode = "predictions",
     rolling_kwargs: Optional[RollingKwargs] = None,
@@ -361,7 +363,7 @@ def compute_rolling_least_squares(
 
 def compute_least_squares_from_formula(
     formula: str,
-    sample_weights: Optional[pl.Expr] = None,
+    sample_weights: Optional[ExprOrStr] = None,
     mode: OutputMode = "predictions",
     **kwargs,
 ) -> pl.Expr:
@@ -403,8 +405,8 @@ def compute_least_squares_from_formula(
 
 
 def predict(
-    coefficients: IntoExpr,
-    *features: pl.Expr,
+    coefficients: ExprOrStr,
+    *features: ExprOrStr,
     null_policy: NullPolicy = "zero",
     add_intercept: bool = False,
     name: Optional[str] = None,
@@ -422,6 +424,10 @@ def predict(
         polars expression denoting computed predictions.
     """
     assert null_policy in _VALID_NULL_POLICIES, "'null_policy' must be one of {drop, ignore, zero}"
+
+    coefficients: pl.Expr = parse_into_expr(coefficients)
+    features: List[pl.Expr] = [parse_into_expr(f) for f in features]
+
     if add_intercept:
         if any(f.meta.output_name == "const" for f in features):
             logger.warning("feature named 'const' already detected, assuming it is the intercept")
@@ -435,11 +441,3 @@ def predict(
         is_elementwise=False,
         input_wildcard_expansion=True,
     ).alias(name or "predictions")
-
-
-def convert_series_to_struct(*inputs: pl.Expr) -> pl.Expr:
-    return register_plugin_function(
-        plugin_path=Path(__file__).parent,
-        function_name="inputs_to_struct",
-        args=inputs,
-    )
