@@ -1,5 +1,5 @@
 #![allow(clippy::unit_arg, clippy::unused_unit)]
-use ndarray::{Array, Array1, Array2, Axis};
+use ndarray::{s, Array, Array1, Array2, Axis};
 use polars::datatypes::{DataType, Field, Float64Type};
 use polars::error::{polars_err, PolarsResult};
 use polars::frame::DataFrame;
@@ -12,8 +12,8 @@ use serde::Deserialize;
 use std::str::FromStr;
 
 use crate::least_squares::{
-    solve_elastic_net, solve_ols, solve_recursive_least_squares, solve_ridge, solve_rolling_ols,
-    NullPolicy, SolveMethod,
+    solve_elastic_net, solve_multi_target, solve_ols, solve_recursive_least_squares, solve_ridge,
+    solve_rolling_ols, NullPolicy, SolveMethod,
 };
 
 /// convert a slice of polars series into a 2D feature array.
@@ -104,10 +104,14 @@ fn coefficients_struct_dtype(input_fields: &[Field]) -> PolarsResult<Field> {
 }
 
 /// Convert the coefficients into a Polars series of struct dtype.
-fn coefficients_to_struct_series(coefficients: &Array2<f64>, feature_names: &[&str]) -> Series {
+fn convert_array_to_struct_series(
+    array: &Array2<f64>,
+    feature_names: &[&str],
+    name: Option<&str>,
+) -> Series {
     // Convert 2D ndarray into DataFrame
     let df: DataFrame = DataFrame::new(
-        coefficients
+        array
             .axis_iter(Axis(1))
             .enumerate()
             .map(|(i, col)| {
@@ -130,7 +134,7 @@ fn coefficients_to_struct_series(coefficients: &Array2<f64>, feature_names: &[&s
     .collect()
     .unwrap();
     // Convert DataFrame to a Series of struct dtype
-    df.into_struct("coefficients").into_series()
+    df.into_struct(name.unwrap_or("coefficients")).into_series()
 }
 
 fn mask_predictions(predictions: Vec<f64>, is_valid_mask: &BooleanChunked) -> Vec<Option<f64>> {
@@ -189,7 +193,12 @@ fn convert_option_vec_to_array1(opt_vec: Option<Vec<f64>>) -> Option<Array1<f64>
     opt_vec.map(Array1::from)
 }
 
-fn compute_is_valid_mask(inputs: &[Series], null_policy: &NullPolicy) -> Option<BooleanChunked> {
+fn compute_is_valid_mask(
+    inputs: &[Series],
+    null_policy: &NullPolicy,
+    multi_target_index: Option<usize>,
+) -> Option<BooleanChunked> {
+    let multi_target_index = multi_target_index.unwrap_or(0);
     match null_policy {
         // Compute the intersection of all non-null rows across input series
         NullPolicy::Drop | NullPolicy::DropZero | NullPolicy::DropWindow => {
@@ -201,7 +210,14 @@ fn compute_is_valid_mask(inputs: &[Series], null_policy: &NullPolicy) -> Option<
             )
         }
         // Compute non-null mask based on the first input series (i.e. targets)
-        NullPolicy::DropYZeroX => Some(inputs[0].is_not_null()),
+        NullPolicy::DropYZeroX => match multi_target_index {
+            0 => Some(inputs[0].is_not_null()),
+            _ => Some(
+                inputs[1..multi_target_index]
+                    .iter()
+                    .fold(inputs[0].is_not_null(), |acc, s| acc & s.is_not_null()),
+            ),
+        },
         _ => None,
     }
 }
@@ -369,7 +385,7 @@ fn _get_least_squares_coefficients(
 #[polars_expr(output_type=Float64)]
 fn least_squares(inputs: &[Series], kwargs: OLSKwargs) -> PolarsResult<Series> {
     let null_policy = kwargs.get_null_policy();
-    let is_valid = compute_is_valid_mask(inputs, &null_policy);
+    let is_valid = compute_is_valid_mask(inputs, &null_policy, None);
     let (y_fit, x_fit) = convert_polars_to_ndarray(inputs, &null_policy, is_valid.as_ref());
     let coefficients =
         Coefficients::Array1(_get_least_squares_coefficients(&y_fit, &x_fit, kwargs));
@@ -409,7 +425,7 @@ fn least_squares(inputs: &[Series], kwargs: OLSKwargs) -> PolarsResult<Series> {
 #[polars_expr(output_type_func=coefficients_struct_dtype)]
 fn least_squares_coefficients(inputs: &[Series], kwargs: OLSKwargs) -> PolarsResult<Series> {
     let null_policy = kwargs.get_null_policy();
-    let is_valid = compute_is_valid_mask(inputs, &null_policy);
+    let is_valid = compute_is_valid_mask(inputs, &null_policy, None);
     let (y, x) = convert_polars_to_ndarray(inputs, &null_policy, is_valid.as_ref());
     // force into 1 x K 2-d array, so that we can return a series of struct
     let coefficients = _get_least_squares_coefficients(&y, &x, kwargs).insert_axis(Axis(0));
@@ -420,8 +436,90 @@ fn least_squares_coefficients(inputs: &[Series], kwargs: OLSKwargs) -> PolarsRes
         coefficients.len_of(Axis(1)),
         "number of coefficients must match number of features!"
     );
-    let series = coefficients_to_struct_series(&coefficients, &feature_names);
+    let series = convert_array_to_struct_series(&coefficients, &feature_names, None);
     Ok(series.with_name("coefficients"))
+}
+
+fn multi_target_struct_dtype(input_fields: &[Field]) -> PolarsResult<Field> {
+    let dtype = input_fields[0].dtype.to_owned();
+    assert!(
+        dtype.is_struct(),
+        "the first series in a multi-target regression \
+        must be of polars struct dtype with each field corresponding to an output"
+    );
+    Ok(Field::new("predictions", dtype))
+}
+
+#[polars_expr(output_type_func=multi_target_struct_dtype)]
+fn multi_target_least_squares(inputs: &[Series], kwargs: OLSKwargs) -> PolarsResult<Series> {
+    let null_policy = kwargs.get_null_policy();
+
+    // compute targets
+    let targets_struct = inputs[0]
+        .struct_()
+        .expect("the first series in a multi-target regression must be a struct");
+    let targets_df = targets_struct.to_owned().unnest();
+    let target_series = targets_df.iter().as_slice();
+
+    // concatenate multi-target and feature series
+    let series = [target_series, &inputs[1..]].concat();
+
+    // define number of target series
+    let m = target_series.len();
+
+    // compute validity mask
+    let is_valid = compute_is_valid_mask(&series, &null_policy, Some(m));
+
+    // handle nulls according to the specified null policy (this should just work for multi-target)
+    let mut filtered_series = Vec::new();
+    handle_nulls(
+        &series,
+        &null_policy,
+        is_valid.as_ref(),
+        &mut filtered_series,
+    );
+
+    // compute filtered features & targets array
+    let features_array = construct_features_array(&filtered_series[m..], true);
+    let targets_array = construct_features_array(&filtered_series[..m], true);
+
+    // this should be K x M, where K is number of features
+    let coefficients =
+        solve_multi_target(&targets_array, &features_array, kwargs.alpha, kwargs.rcond);
+    assert_eq!(coefficients.nrows(), features_array.ncols());
+    assert_eq!(coefficients.ncols(), targets_array.ncols());
+
+    let target_names: Vec<&str> = target_series.iter().map(|s| s.name()).collect();
+
+    if matches!(null_policy, NullPolicy::Ignore | NullPolicy::Zero) {
+        let predictions = features_array.dot(&coefficients);
+        Ok(convert_array_to_struct_series(
+            &predictions,
+            &target_names,
+            Some("predictions"),
+        ))
+    } else {
+        // compute unfiltered features array and predictions assuming zero filled features
+        let features_array_predict = construct_features_array(&inputs[1..], true);
+        let mut predictions = features_array_predict.dot(&coefficients);
+
+        // re-mask invalid predictions
+        if null_policy == NullPolicy::Drop {
+            if let Some(is_valid) = is_valid {
+                for (i, valid) in is_valid.iter().enumerate() {
+                    if !valid.unwrap_or(false) {
+                        predictions.slice_mut(s![i, ..]).fill(f64::NAN);
+                    }
+                }
+            }
+        }
+
+        Ok(convert_array_to_struct_series(
+            &predictions,
+            &target_names,
+            Some("predictions"),
+        ))
+    }
 }
 
 #[polars_expr(output_type_func=coefficients_struct_dtype)]
@@ -431,7 +529,7 @@ fn recursive_least_squares_coefficients(
 ) -> PolarsResult<Series> {
     let null_policy = kwargs.get_null_policy();
 
-    let is_valid = compute_is_valid_mask(inputs, &null_policy);
+    let is_valid = compute_is_valid_mask(inputs, &null_policy, None);
     let is_valid = convert_is_valid_mask_to_vec(&is_valid, inputs[0].len());
 
     let (y, x) = convert_polars_to_ndarray(inputs, &NullPolicy::Zero, None);
@@ -451,14 +549,14 @@ fn recursive_least_squares_coefficients(
         coefficients.len_of(Axis(1)),
         "number of coefficients must match number of features!"
     );
-    let series = coefficients_to_struct_series(&coefficients, &feature_names);
+    let series = convert_array_to_struct_series(&coefficients, &feature_names, None);
     Ok(series.with_name("coefficients"))
 }
 
 #[polars_expr(output_type=Float64)]
 fn recursive_least_squares(inputs: &[Series], kwargs: RLSKwargs) -> PolarsResult<Series> {
     let null_policy = kwargs.get_null_policy();
-    let is_valid = compute_is_valid_mask(inputs, &null_policy);
+    let is_valid = compute_is_valid_mask(inputs, &null_policy, None);
     let is_valid_vec = convert_is_valid_mask_to_vec(&is_valid, inputs[0].len());
     let (y, x) = convert_polars_to_ndarray(inputs, &NullPolicy::Zero, None);
 
@@ -485,7 +583,7 @@ fn rolling_least_squares_coefficients(
     kwargs: RollingKwargs,
 ) -> PolarsResult<Series> {
     let null_policy = kwargs.get_null_policy();
-    let is_valid = compute_is_valid_mask(inputs, &null_policy);
+    let is_valid = compute_is_valid_mask(inputs, &null_policy, None);
     let is_valid = convert_is_valid_mask_to_vec(&is_valid, inputs[0].len());
     let (y, x) = convert_polars_to_ndarray(inputs, &NullPolicy::Zero, None);
     let coefficients = solve_rolling_ols(
@@ -505,14 +603,14 @@ fn rolling_least_squares_coefficients(
         coefficients.len_of(Axis(1)),
         "number of coefficients must match number of features!"
     );
-    let series = coefficients_to_struct_series(&coefficients, &feature_names);
+    let series = convert_array_to_struct_series(&coefficients, &feature_names, None);
     Ok(series.with_name("coefficients"))
 }
 
 #[polars_expr(output_type=Float64)]
 fn rolling_least_squares(inputs: &[Series], kwargs: RollingKwargs) -> PolarsResult<Series> {
     let null_policy = kwargs.get_null_policy();
-    let is_valid = compute_is_valid_mask(inputs, &null_policy);
+    let is_valid = compute_is_valid_mask(inputs, &null_policy, None);
     let is_valid_vec = convert_is_valid_mask_to_vec(&is_valid, inputs[0].len());
     let (y, x) = convert_polars_to_ndarray(inputs, &NullPolicy::Zero, None);
     let coefficients = Coefficients::Array2(solve_rolling_ols(
@@ -563,7 +661,7 @@ fn predict(inputs: &[Series], kwargs: PredictKwargs) -> PolarsResult<Series> {
 
     if null_policy == NullPolicy::Drop {
         // If user has opted for "Drop" policy: mask predictions
-        let is_valid = compute_is_valid_mask(inputs, &null_policy).unwrap();
+        let is_valid = compute_is_valid_mask(inputs, &null_policy, None).unwrap();
         Ok(Series::new(
             inputs[0].name(),
             mask_predictions(predictions, &is_valid),

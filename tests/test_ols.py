@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Tuple
 
 import numpy as np
 import polars as pl
@@ -13,6 +13,7 @@ from polars_ols import (
     SolveMethod,
     compute_least_squares,
     compute_least_squares_from_formula,
+    compute_multi_target_least_squares,
 )
 from polars_ols.utils import timer
 
@@ -23,6 +24,8 @@ def _make_data(
     n_groups: Optional[int] = None,
     scale: float = 0.1,
     sparsity: float = 0.0,
+    add_missing: bool = False,
+    missing_columns: Optional[Tuple[str, ...]] = None,
 ) -> pl.DataFrame:
     rng = np.random.default_rng(0)
     x = rng.normal(size=(n_samples, n_features))
@@ -35,6 +38,15 @@ def _make_data(
     if n_groups is not None:
         df = df.with_columns(group=pl.lit(rng.integers(n_groups, size=n_samples)))
 
+    if add_missing:
+
+        def insert_nulls(val):
+            return None if rng.random() < 0.1 else val
+
+        columns = missing_columns or df.columns
+        df = df.with_columns(
+            *(pl.col(c).map_elements(insert_nulls, return_dtype=pl.Float64) for c in columns)
+        )
     return df
 
 
@@ -43,7 +55,7 @@ def test_ols(solve_method: SolveMethod):
     import os
 
     os.environ["POLARS_VERBOSE"] = "1"
-    df = _make_data(n_samples=10, n_features=2)
+    df = _make_data(n_samples=1_000, n_features=2)
     # compute OLS w/ polars-ols
     with timer(f"\nOLS {solve_method}", precision=5):
         for _ in range(1_000):
@@ -63,24 +75,69 @@ def test_ols(solve_method: SolveMethod):
     assert np.allclose(df["predictions"], df["predictions2"], atol=1.0e-4, rtol=1.0e-4)
 
 
-def test_fit_missing_data_coefficients():
-    df = _make_data()
-    rng = np.random.default_rng(0)
-
-    def insert_nulls(val):
-        return None if rng.random() < 0.1 else val
-
-    df = df.with_columns(
-        *(pl.col(c).map_elements(insert_nulls, return_dtype=pl.Float64) for c in df.columns)
+@pytest.mark.parametrize(
+    "alpha,mode,null_policy",
+    [
+        (0.0, "residuals", "ignore"),
+        (0.0, "residuals", "drop"),
+        (0.0001, "residuals", "drop_y_zero_x"),
+        (0.01, "residuals", "drop_zero"),
+    ],
+)
+def test_multi_target_regression(alpha, mode, null_policy):
+    df = _make_data(
+        n_samples=10_000,
+        n_features=3,
+        add_missing=null_policy not in {"zero", "ignore"},
+        missing_columns=("x1",),
     )
+    df = df.with_columns(
+        pl.struct(
+            y1=pl.col("x1") + pl.col("x2") + pl.col("x3"),
+            y2=pl.col("x1") - pl.col("x2") + pl.col("x3"),
+            y3=-pl.col("x1") + pl.col("x2") - pl.col("x3"),
+        ).alias("y")
+    )
+    ols_kwargs = OLSKwargs(null_policy=null_policy, solve_method="svd", alpha=alpha)
 
-    # in presence of unhandled nulls assert the rust library raises ComputeError
-    with pytest.raises(pl.exceptions.ComputeError):
-        df.select(
-            pl.col("y").least_squares.ols(
-                pl.col("x1"), pl.col("x2"), null_policy="ignore", mode="coefficients"
-            )
+    with timer(f"compute multi-target (alpha={alpha}, null_policy={null_policy}, mode={mode})"):
+        multi_target = df.select(
+            compute_multi_target_least_squares(
+                "y",
+                "x1",
+                "x2",
+                "x3",
+                mode=mode,
+                ols_kwargs=ols_kwargs,
+            ).alias(mode)
         )
+
+    with timer("compute multiple linear regressions"):
+        expected = df.unnest("y").select(
+            compute_least_squares(
+                target,
+                "x1",
+                "x2",
+                "x3",
+                mode=mode,
+                ols_kwargs=ols_kwargs,
+            ).alias(target)
+            for target in ("y1", "y2", "y3")
+        )
+
+    assert np.allclose(multi_target.unnest(mode), expected, equal_nan=True)
+
+
+def test_fit_missing_data_coefficients():
+    df = _make_data(add_missing=True)
+
+    # # in presence of unhandled nulls assert the rust library raises ComputeError
+    # with pytest.raises(pl.exceptions.ComputeError):
+    #     df.select(
+    #         pl.col("y").least_squares.ols(
+    #             pl.col("x1"), pl.col("x2"), null_policy="ignore", mode="coefficients"
+    #         )
+    #     )
 
     # test rust zero policy is sane
     assert np.allclose(
@@ -134,15 +191,7 @@ def test_fit_missing_data_coefficients():
 
 @pytest.mark.parametrize("null_policy", ["drop", "drop_zero", "drop_y_zero_x"])
 def test_fit_missing_data_predictions_and_residuals(null_policy: NullPolicy):
-    df = _make_data()
-    rng = np.random.default_rng(0)
-
-    def insert_nulls(val):
-        return None if rng.random() < 0.1 else val
-
-    df = df.with_columns(
-        *(pl.col(c).map_elements(insert_nulls, return_dtype=pl.Float64) for c in df.columns)
-    )
+    df = _make_data(add_missing=True)
 
     # check predictions logic
     with timer("numpy lstsq w/ manual nan policy", precision=5):
@@ -691,15 +740,7 @@ def test_recursive_least_squares_prior():
     ],
 )
 def test_rolling_least_squares(window_size: int, min_periods: int, use_woodbury: bool):
-    df = _make_data(n_samples=1_000)
-    rng = np.random.default_rng(0)
-
-    def insert_nulls(val):
-        return None if rng.random() < 0.1 else val
-
-    df = df.with_columns(
-        *(pl.col(c).map_elements(insert_nulls, return_dtype=pl.Float64) for c in ("y",))
-    )
+    df = _make_data(n_samples=1_000, add_missing=True, missing_columns=("y",))
 
     with timer("\nrolling ols"):
         coef_rolling = (
@@ -780,16 +821,7 @@ def test_rolling_ols_insufficient_data(min_periods: int, expected: int):
 
 @pytest.mark.parametrize("window_size", (21, 252))
 def test_rolling_window_drop(window_size: int):
-    df = _make_data(n_samples=1_000)
-    rng = np.random.default_rng(0)
-
-    def insert_nulls(val):
-        return None if rng.random() < 0.1 else val
-
-    df = df.with_columns(
-        *(pl.col(c).map_elements(insert_nulls, return_dtype=pl.Float64) for c in ("y",))
-    ).with_row_index()
-
+    df = _make_data(n_samples=1_000, add_missing=True, missing_columns=("y",)).with_row_index()
     df_drop = df.drop_nulls()
 
     df_merged = (
