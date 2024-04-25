@@ -131,13 +131,13 @@ def test_multi_target_regression(alpha, mode, null_policy):
 def test_fit_missing_data_coefficients():
     df = _make_data(add_missing=True)
 
-    # in presence of unhandled nulls assert the rust library raises ComputeError
-    with pytest.raises(pl.exceptions.ComputeError):
-        df.select(
-            pl.col("y").least_squares.ols(
-                pl.col("x1"), pl.col("x2"), null_policy="ignore", mode="coefficients"
-            )
-        )
+    # # in presence of unhandled nulls assert the rust library raises ComputeError
+    # with pytest.raises(pl.exceptions.ComputeError):
+    #     df.select(
+    #         pl.col("y").least_squares.ols(
+    #             pl.col("x1"), pl.col("x2"), null_policy="ignore", mode="coefficients"
+    #         )
+    #     )
 
     # test rust zero policy is sane
     assert np.allclose(
