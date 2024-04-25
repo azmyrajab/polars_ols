@@ -6,10 +6,8 @@ use faer::linalg::solvers::SolverCore;
 use faer::prelude::*;
 use faer::Side;
 use faer_ext::{IntoFaer, IntoNdarray};
-use ndarray::{
-    array, s, Array, Array1, Array2, ArrayBase, ArrayView1, Axis,
-    Dimension, Ix2, NewAxis,
-    OwnedRepr,
+use ndarray::{array, s, Array, Array1, Array2, ArrayBase, ArrayView1, Axis, Dimension, Ix2, NewAxis,
+    OwnedRepr, Dim,
 };
 
 #[cfg(any(
