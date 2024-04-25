@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use std::cmp::{max, min};
 use std::collections::VecDeque;
 use std::str::FromStr;
@@ -7,6 +6,8 @@ use faer::linalg::solvers::SolverCore;
 use faer::prelude::*;
 use faer::Side;
 use faer_ext::{IntoFaer, IntoNdarray};
+
+#[allow(unused_imports)]
 use ndarray::{array, s, Array, Array1, Array2, ArrayBase, ArrayView1, Axis, Dimension, Ix2, NewAxis,
     OwnedRepr, Dim,
 };
