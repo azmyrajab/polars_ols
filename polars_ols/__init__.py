@@ -13,6 +13,7 @@ from polars_ols.least_squares import (
     SolveMethod,
     compute_least_squares,
     compute_least_squares_from_formula,
+    compute_multi_target_least_squares,
     compute_recursive_least_squares,
     compute_rolling_least_squares,
     predict,
@@ -23,9 +24,12 @@ __all__ = [
     "compute_least_squares",
     "compute_recursive_least_squares",
     "compute_rolling_least_squares",
-    "LeastSquares",
+    "compute_multi_target_least_squares",
     "compute_least_squares_from_formula",
+    "LeastSquares",
 ]
+
+ExprOrStr = Union[pl.Expr, str]
 
 
 @pl.api.register_expr_namespace("least_squares")
@@ -60,12 +64,13 @@ class LeastSquares:
 
     def least_squares(
         self,
-        *features: pl.Expr,
-        sample_weights: Optional[pl.Expr] = None,
+        *features: ExprOrStr,
+        sample_weights: Optional[ExprOrStr] = None,
         add_intercept: bool = False,
         mode: OutputMode = "predictions",
         null_policy: NullPolicy = "ignore",
         solve_method: Optional[SolveMethod] = None,
+        multi_target: bool = False,
         **ols_kwargs,
     ) -> pl.Expr:
         """Perform least squares regression.
@@ -79,9 +84,11 @@ class LeastSquares:
                              Defaults to None, where a recommended default method is chosen based
                              on parametrization of the least-squares problem.
                              It can be one of ("qr", "svd", "chol", "lu", "cd").
+        :param multi_target: boolean indicating if the target expression is multi-target struct.
         :param ols_kwargs: Additional, optional, model specific kwargs. See OLSKwargs.
         """
-        return compute_least_squares(
+        ols_func = compute_least_squares if not multi_target else compute_multi_target_least_squares
+        return ols_func(
             self._expr,
             *features,
             sample_weights=sample_weights,
@@ -90,11 +97,14 @@ class LeastSquares:
             ols_kwargs=OLSKwargs(null_policy=null_policy, solve_method=solve_method, **ols_kwargs),
         )
 
-    def ols(self, *features: pl.Expr, **kwargs) -> pl.Expr:
+    def ols(self, *features: ExprOrStr, **kwargs) -> pl.Expr:
         """Performs ordinary least squares. Alias for `least_squares`."""
         return self.least_squares(*features, **kwargs)
 
-    def wls(self, *features: pl.Expr, sample_weights: pl.Expr, **kwargs) -> pl.Expr:
+    def multi_target_ols(self, *features: ExprOrStr, **kwargs) -> pl.Expr:
+        return self.least_squares(*features, multi_target=True, **kwargs)
+
+    def wls(self, *features: ExprOrStr, sample_weights: ExprOrStr, **kwargs) -> pl.Expr:
         """Performs weighted least squares. Alias for `least_squares`.
 
         :param features: Variable number of feature expressions.
@@ -103,7 +113,7 @@ class LeastSquares:
         """
         return self.least_squares(*features, sample_weights=sample_weights, **kwargs)
 
-    def ridge(self, *features: pl.Expr, alpha: float, **kwargs) -> pl.Expr:
+    def ridge(self, *features: ExprOrStr, alpha: float, **kwargs) -> pl.Expr:
         """Performs ridge regression. Alias for `least_squares`.
 
         :param features: Variable number of feature expressions.
@@ -112,7 +122,7 @@ class LeastSquares:
         """
         return self.least_squares(*features, alpha=alpha, l1_ratio=0.0, **kwargs)
 
-    def lasso(self, *features: pl.Expr, alpha: float, **kwargs) -> pl.Expr:
+    def lasso(self, *features: ExprOrStr, alpha: float, **kwargs) -> pl.Expr:
         """Performs lasso regression. Alias for `least_squares`.
 
         :param features: Variable number of feature expressions.
@@ -123,7 +133,7 @@ class LeastSquares:
 
     def elastic_net(
         self,
-        *features: pl.Expr,
+        *features: ExprOrStr,
         alpha: float,
         l1_ratio: float = 0.5,
         positive: bool = False,
@@ -146,8 +156,8 @@ class LeastSquares:
 
     def rls(
         self,
-        *features: pl.Expr,
-        sample_weights: Optional[pl.Expr] = None,
+        *features: ExprOrStr,
+        sample_weights: Optional[ExprOrStr] = None,
         add_intercept: bool = False,
         mode: OutputMode = "predictions",
         null_policy: NullPolicy = "drop",
@@ -194,9 +204,9 @@ class LeastSquares:
 
     def rolling_ols(
         self,
-        *features: pl.Expr,
+        *features: ExprOrStr,
         window_size: int,
-        sample_weights: Optional[pl.Expr] = None,
+        sample_weights: Optional[ExprOrStr] = None,
         add_intercept: bool = False,
         mode: OutputMode = "predictions",
         null_policy: NullPolicy = "drop",
@@ -247,7 +257,7 @@ class LeastSquares:
             ),
         )
 
-    def expanding_ols(self, *features: pl.Expr, **kwargs):
+    def expanding_ols(self, *features: ExprOrStr, **kwargs):
         return self.rls(*features, half_life=None, **kwargs)
 
     def from_formula(self, formula: str, **kwargs) -> pl.Expr:
@@ -263,7 +273,7 @@ class LeastSquares:
 
     def predict(
         self,
-        *features: pl.Expr,
+        *features: ExprOrStr,
         name: Optional[str] = None,
         add_intercept: bool = False,
         null_policy: NullPolicy = "zero",

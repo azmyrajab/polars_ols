@@ -26,7 +26,6 @@ if TYPE_CHECKING:
 
     ExprOrStr = Union[pl.Expr, str]
 
-
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -35,6 +34,7 @@ __all__ = [
     "compute_recursive_least_squares",
     "compute_rolling_least_squares",
     "compute_least_squares_from_formula",
+    "compute_multi_target_least_squares",
     "predict",
     # model specific parameters
     "OLSKwargs",
@@ -245,9 +245,9 @@ def _register_least_squares_plugin(
 
 
 def compute_least_squares(
-    target: IntoExpr,
-    *features: pl.Expr,
-    sample_weights: Optional[pl.Expr] = None,
+    target: ExprOrStr,
+    *features: ExprOrStr,
+    sample_weights: Optional[ExprOrStr] = None,
     add_intercept: bool = False,
     mode: OutputMode = "predictions",
     ols_kwargs: Optional[OLSKwargs] = None,
@@ -270,6 +270,7 @@ def compute_least_squares(
     """
     assert mode in _VALID_OUTPUT_MODES, f"'mode' must be one of {_VALID_OUTPUT_MODES}"
     ols_kwargs: OLSKwargs = ols_kwargs or OLSKwargs()
+
     # register either coefficient or prediction plugin functions
     return _register_least_squares_plugin(
         target,
@@ -280,6 +281,55 @@ def compute_least_squares(
         sample_weights=sample_weights,
         add_intercept=add_intercept,
         returns_scalar_coefficients=True,
+    )
+
+
+def compute_multi_target_least_squares(
+    targets: ExprOrStr,
+    *features: ExprOrStr,
+    sample_weights: Optional[ExprOrStr] = None,
+    add_intercept: bool = False,
+    mode: OutputMode = "predictions",
+    ols_kwargs: Optional[OLSKwargs] = None,
+) -> pl.Expr:
+    """Performs multi-target least squares regression.
+
+    This function expects 'targets' to be of type struct with field names corresponding
+    to each target series name. It returns an expression yielding a struct with similar field names
+    and either predictions or residuals as values depending on the chosen mode.
+
+    This is more efficient, but equivalent to, running 'N' multiple linear regressions of each
+    underlying target onto the same set of features.
+
+    OLS, WLS, & Ridge for both "prediction" and "residuals" modes are currently supported.
+    For other configurations (e.g. LASSO): consider running multiple independent regressions on
+    a multi-expression "target" using 'compute_least_squares'.
+    """
+    ols_kwargs = ols_kwargs or OLSKwargs()
+    multi_target_conditions = not ols_kwargs.positive and (
+        ols_kwargs.l1_ratio is None or ols_kwargs.l1_ratio == 0.0
+    )
+    msg = "Consider running multiple independent regressions on a multi-expression target!"
+    assert multi_target_conditions, (
+        "Multi-target regression is only supported " "for unconstrained OLS & Ridge problems." + msg
+    )
+    assert ols_kwargs.solve_method in {"svd", None}, (
+        "only solve_method='svd' is supported for " "multi-target regressions"
+    )
+    if mode == "coefficients":
+        raise NotImplementedError(
+            "Only mode={'predictions', 'residuals'} " "is currently supported. " + msg
+        )
+
+    return _register_least_squares_plugin(
+        targets,
+        *features,
+        function_name="multi_target_least_squares",
+        ols_kwargs=ols_kwargs,
+        sample_weights=sample_weights,
+        add_intercept=add_intercept,
+        returns_scalar_coefficients=True,
+        mode=mode,
     )
 
 

@@ -1,11 +1,15 @@
+use std::cmp::{max, min};
+use std::collections::VecDeque;
+use std::str::FromStr;
+
 use faer::linalg::solvers::SolverCore;
 use faer::prelude::*;
 use faer::Side;
 use faer_ext::{IntoFaer, IntoNdarray};
-use ndarray::{array, s, Array, Array1, Array2, ArrayView1, Axis, NewAxis};
-use std::cmp::{max, min};
-use std::collections::VecDeque;
-use std::str::FromStr;
+use ndarray::{
+    array, s, Array, Array1, Array2, ArrayBase, ArrayView1, Axis, Dim, Dimension, Ix2, NewAxis,
+    OwnedRepr,
+};
 
 #[cfg(any(
     all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x64")),
@@ -99,14 +103,31 @@ impl FromStr for NullPolicy {
 ///
 /// * Result of ridge regression as a 1-dimensional array.
 #[inline]
-fn solve_ridge_svd(
-    y: &Array1<f64>,
+fn solve_ridge_svd<I>(
+    y: &ArrayBase<OwnedRepr<f64>, I>,
     x: &Array2<f64>,
     alpha: f64,
     rcond: Option<f64>,
-) -> Array1<f64> {
+) -> ArrayBase<OwnedRepr<f64>, I>
+where
+    I: Dimension,
+{
     let x_faer = x.view().into_faer();
-    let y_faer = y.view().insert_axis(Axis(1)).into_faer();
+
+    let y_faer = if y.ndim() == 2 {
+        y.view()
+            .into_dimensionality::<Ix2>()
+            .expect("could not reshape y")
+            .into_faer()
+    } else {
+        y.view()
+            .insert_axis(Axis(1))
+            .into_dimensionality::<Ix2>()
+            .expect("could not reshape y")
+            .into_faer()
+    };
+
+    let is_multi_target = y_faer.ncols() > 1;
 
     // compute SVD and extract u, s, vt
     let svd = x_faer.thin_svd();
@@ -124,21 +145,36 @@ fn solve_ridge_svd(
     let s = s.map(|v| if v < &cutoff { 0. } else { *v });
 
     let binding = u.transpose() * y_faer;
-    let u_t_y: Array1<f64> = binding
-        .as_ref()
-        .into_ndarray()
-        .slice(s![.., 0])
-        .into_owned();
     let d = &s / (&s * &s + alpha);
-    let d_ut_y = &d * &u_t_y;
-    v.dot(&d_ut_y)
+
+    if is_multi_target {
+        let u_t_y = binding.as_ref().into_ndarray().to_owned();
+        let d_ut_y_t = &d * &u_t_y.t();
+        v.dot(&d_ut_y_t.t())
+            .to_owned()
+            .into_dimensionality::<I>()
+            .expect("could not reshape output")
+    } else {
+        let u_t_y: Array1<f64> = binding
+            .as_ref()
+            .into_ndarray()
+            .slice(s![.., 0])
+            .into_owned();
+        let d_ut_y = &d * &u_t_y;
+        v.dot(&d_ut_y)
+            .into_dimensionality::<I>()
+            .expect("could not reshape output")
+    }
 }
 
 #[cfg(not(any(
     all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x64")),
     target_os = "macos"
 )))]
-fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1<f64> {
+fn solve_ols_svd<D>(y: &Array<f64, D>, x: &Array2<f64>, rcond: Option<f64>) -> Array<f64, D>
+where
+    D: Dimension,
+{
     // fallback SVD solver for platforms which don't (easily) support LAPACK solver
     solve_ridge_svd(y, x, 1.0e-64, rcond) // near zero ridge penalty
 }
@@ -150,7 +186,11 @@ fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1
 ))]
 #[allow(unused_variables)]
 #[inline]
-fn solve_ols_svd(y: &Array1<f64>, x: &Array2<f64>, rcond: Option<f64>) -> Array1<f64> {
+fn solve_ols_svd<D>(y: &Array<f64, D>, x: &Array2<f64>, rcond: Option<f64>) -> Array<f64, D>
+where
+    D: Dimension,
+    ArrayBase<OwnedRepr<f64>, Dim<[usize; 2]>>: LeastSquaresSvd<OwnedRepr<f64>, f64, D>,
+{
     x.least_squares(y)
         .expect("Failed to compute LAPACK SVD solution!")
         .solution
@@ -199,6 +239,21 @@ pub fn solve_ols(
     if solve_method == SolveMethod::QR {
         // compute least squares solution via QR
         solve_ols_qr(y, x)
+    } else {
+        solve_ols_svd(y, x, rcond)
+    }
+}
+
+/// Solve multi-target least squares regression using SVD
+pub fn solve_multi_target(
+    y: &Array2<f64>,
+    x: &Array2<f64>,
+    alpha: Option<f64>,
+    rcond: Option<f64>,
+) -> Array2<f64> {
+    let alpha = alpha.unwrap_or(0.0);
+    if alpha > 0.0 {
+        solve_ridge_svd(y, x, alpha, rcond)
     } else {
         solve_ols_svd(y, x, rcond)
     }

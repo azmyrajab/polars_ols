@@ -3,7 +3,7 @@ import polars as pl
 import pyperf
 import scipy
 import statsmodels.formula.api as smf
-from sklearn.linear_model import ElasticNet, Ridge
+from sklearn.linear_model import ElasticNet, LinearRegression, Ridge
 from statsmodels.regression.recursive_ls import RecursiveLS
 from statsmodels.regression.rolling import RollingOLS
 
@@ -11,12 +11,31 @@ import polars_ols as pls  # import package to register the .least_squares namesp
 from polars_ols.least_squares import SolveMethod
 
 
-def _make_data(n_samples: int = 2_000, n_features: int = 5, sparsity: float = 0.5) -> pl.DataFrame:
-    x = np.random.normal(size=(n_samples, n_features))
-    eps = np.random.normal(size=n_samples, scale=0.1)
-    return pl.DataFrame(data=x, schema=[f"x{i + 1}" for i in range(n_features)]).with_columns(
-        y=pl.lit(x[:, : int(n_features * (1.0 - sparsity))].sum(1) + eps)
-    )
+def _make_data(
+    n_samples: int = 2_000,
+    n_features: int = 5,
+    sparsity: float = 0.5,
+    n_targets: int = 1,
+) -> pl.DataFrame:
+    x = np.random.normal(size=(n_samples, n_features))  # N x K
+    features = pl.DataFrame(data=x, schema=[f"x{i + 1}" for i in range(n_features)])
+    # make single output
+    if n_targets == 1:
+        eps = np.random.normal(size=n_samples, scale=0.1)
+        return features.with_columns(
+            y=pl.lit(x[:, : int(n_features * (1.0 - sparsity))].sum(1) + eps)
+        )
+    # make multi-target
+    else:
+        # create a random linear kernel
+        w = np.random.normal(size=(x.shape[1], n_targets))
+        eps = np.random.normal(size=(n_samples, n_targets), scale=0.1)
+        sparsity_mask = np.random.choice([True, False], size=w.shape, p=[1 - sparsity, sparsity])
+        w *= sparsity_mask
+        y = x @ w + eps
+        return features.with_columns(
+            pl.lit(y).list.to_struct(fields=[f"y{i}" for i in range(n_targets)]).alias("y")
+        )
 
 
 def benchmark_least_squares(data: pl.DataFrame, solve_method: SolveMethod = "qr"):
@@ -171,32 +190,59 @@ def benchmark_recursive_least_squares_statsmodels(data: pl.DataFrame):
     return data.lazy().with_columns(predictions=pl.lit((res.params * x).sum(1))).collect()
 
 
+def benchmark_multi_target(data: pl.DataFrame):
+    return (
+        data.lazy()
+        .with_columns(
+            predictions=pl.col("y").least_squares.multi_target_ols(
+                pl.all().exclude("y"),
+                mode="predictions",
+            )
+        )
+        .collect()
+    )
+
+
+def benchmark_multi_target_sklearn(data: pl.DataFrame):
+    y, x = data.select("y").unnest("y").to_numpy(), data.select(pl.all().exclude("y")).to_numpy()
+    mdl = LinearRegression(fit_intercept=False)
+    mdl.fit(x, y)
+    return data.with_columns(
+        pl.lit(mdl.predict(x)).list.to_struct(fields=[f"y{i}" for i in range(y.shape[1])])
+    )
+
+
 if __name__ == "__main__":
     # example: python tests/benchmark.py --quiet --rigorous
     # we run the benchmarks in python (as opposed to rust) so that overhead of pyO3 is included
-    df = _make_data(n_features=5, n_samples=2_000)
-    runner = pyperf.Runner()
+    df = _make_data(n_features=100, n_samples=10_000)
+    df_multi_target = _make_data(n_features=100, n_targets=20, n_samples=10_000)
 
-    runner.bench_func("benchmark_least_squares_qr", benchmark_least_squares, df, "qr")
+    runner = pyperf.Runner()
     runner.bench_func("benchmark_least_squares_svd", benchmark_least_squares, df, "svd")
-    runner.bench_func("benchmark_ridge_cholesky", benchmark_ridge, df, "chol")
-    runner.bench_func("benchmark_ridge_svd", benchmark_ridge, df, "svd")
-    runner.bench_func("benchmark_wls_from_formula", benchmark_wls_from_formula, df)
-    runner.bench_func("benchmark_elastic_net", benchmark_elastic_net, df, "cd")
-    runner.bench_func(
-        "benchmark_elastic_net_active_set", benchmark_elastic_net, df, "cd_active_set"
-    )
+    runner.bench_func("benchmark_least_squares_qr", benchmark_least_squares, df, "qr")
+    runner.bench_func("benchmark_multi_target", benchmark_multi_target, df_multi_target)
+
+    runner.bench_func("benchmark_least_squares_numpy_svd", benchmark_least_squares_numpy_svd, df)
+    runner.bench_func("benchmark_least_squares_numpy_qr", benchmark_least_squares_numpy_qr, df)
+    runner.bench_func("benchmark_multi_target_sklearn", benchmark_multi_target, df_multi_target)
+
+    # runner.bench_func("benchmark_ridge_cholesky", benchmark_ridge, df, "chol")
+    # runner.bench_func("benchmark_ridge_svd", benchmark_ridge, df, "svd")
+    # runner.bench_func("benchmark_wls_from_formula", benchmark_wls_from_formula, df)
+    # runner.bench_func("benchmark_elastic_net", benchmark_elastic_net, df, "cd")
+    # runner.bench_func(
+    #     "benchmark_elastic_net_active_set", benchmark_elastic_net, df, "cd_active_set"
+    # )
     # runner.bench_func("benchmark_recursive_least_squares", benchmark_recursive_least_squares, df)
     # runner.bench_func("benchmark_rolling_least_squares", benchmark_rolling_least_squares, df)
 
-    runner.bench_func("benchmark_least_squares_numpy_qr", benchmark_least_squares_numpy_qr, df)
-    runner.bench_func("benchmark_least_squares_numpy_svd", benchmark_least_squares_numpy_svd, df)
-    runner.bench_func("benchmark_ridge_sklearn_cholesky", benchmark_ridge_sklearn, df, "cholesky")
-    runner.bench_func("benchmark_ridge_sklearn_svd", benchmark_ridge_sklearn, df, "svd")
-    runner.bench_func(
-        "benchmark_wls_from_formula_statsmodels", benchmark_wls_from_formula_statsmodels, df
-    )
-    runner.bench_func("benchmark_elastic_net_sklearn", benchmark_elastic_net_sklearn, df)
+    # runner.bench_func("benchmark_ridge_sklearn_cholesky", benchmark_ridge_sklearn, df, "cholesky")
+    # runner.bench_func("benchmark_ridge_sklearn_svd", benchmark_ridge_sklearn, df, "svd")
+    # runner.bench_func(
+    #     "benchmark_wls_from_formula_statsmodels", benchmark_wls_from_formula_statsmodels, df
+    # )
+    # runner.bench_func("benchmark_elastic_net_sklearn", benchmark_elastic_net_sklearn, df)
     # runner.bench_func(
     #     "benchmark_recursive_least_squares_statsmodels",
     #     benchmark_recursive_least_squares_statsmodels,
