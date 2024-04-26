@@ -62,6 +62,7 @@ SolveMethod = Literal["qr", "svd", "chol", "lu", "cd", "cd_active_set"]
 _VALID_NULL_POLICIES: Set[NullPolicy] = set(get_args(NullPolicy))
 _VALID_OUTPUT_MODES: Set[OutputMode] = set(get_args(OutputMode))
 _VALID_SOLVE_METHODS: Set[SolveMethod] = set(get_args(SolveMethod)).union({None})
+_EPSILON: float = 1.0e-12
 
 
 @dataclass
@@ -190,7 +191,8 @@ def _pre_process_data(
     # handle sample weights
     sqrt_w: Optional[pl.Expr] = None
     if sample_weights is not None:
-        sqrt_w = parse_into_expr(sample_weights).sqrt()
+        # missing sample weights are assumed to be minimal 'epsilon' weight
+        sqrt_w = parse_into_expr(sample_weights).sqrt().fill_null(_EPSILON)
         target *= sqrt_w
         features = [(expr * sqrt_w) for expr in features]
     return target, features, sqrt_w
@@ -211,22 +213,17 @@ def _register_least_squares_plugin(
 
     # register either coefficient or prediction plugin functions
     if mode == "coefficients":
-        # TODO: remove 'rename_fields' after https://github.com/pola-rs/pyo3-polars/issues/79
-        #  it currently breaks input_wildcard_expansion=True correctly returning a struct.
-        return (
-            register_plugin_function(
-                plugin_path=Path(__file__).parent,
-                function_name=f"{function_name}_coefficients",
-                args=[target_fit, *features_fit],
-                kwargs=ols_kwargs.to_dict(),
-                is_elementwise=False,
-                changes_length=returns_scalar_coefficients,
-                returns_scalar=returns_scalar_coefficients,
-                input_wildcard_expansion=True,
-            )
-            .alias("coefficients")
-            .struct.rename_fields([f.meta.output_name() for f in features_fit])
-        )
+        return register_plugin_function(
+            plugin_path=Path(__file__).parent,
+            function_name=f"{function_name}_coefficients",
+            args=[target_fit, *features_fit],
+            kwargs=ols_kwargs.to_dict(),
+            is_elementwise=False,
+            changes_length=returns_scalar_coefficients,
+            returns_scalar=returns_scalar_coefficients,
+            input_wildcard_expansion=True,
+            pass_name_to_apply=True,
+        ).alias("coefficients")
     else:
         predictions = register_plugin_function(
             plugin_path=Path(__file__).parent,
@@ -237,7 +234,7 @@ def _register_least_squares_plugin(
             input_wildcard_expansion=True,
         )
         if sqrt_w is not None:
-            predictions /= sqrt_w  # undo the scaling implicit in WLS weighting
+            predictions *= 1.0 / sqrt_w  # undo the scaling implicit in WLS weighting
         if mode == "predictions":
             return predictions
         else:

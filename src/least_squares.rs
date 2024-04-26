@@ -252,6 +252,11 @@ pub fn solve_multi_target(
     alpha: Option<f64>,
     rcond: Option<f64>,
 ) -> Array2<f64> {
+    // handle degenerate case of no data
+    if x.is_empty() {
+        return Array2::zeros((x.ncols(), y.ncols()));  // n_features x n_targets
+    }
+    // Choose SVD implementation based on L2 regularization
     let alpha = alpha.unwrap_or(0.0);
     if alpha > 0.0 {
         solve_ridge_svd(y, x, alpha, rcond)

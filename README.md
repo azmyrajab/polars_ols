@@ -54,7 +54,7 @@ df = pl.DataFrame({"y": [1.16, -2.16, -1.57, 0.21, 0.22, 1.6, -2.11, -2.92, -0.8
                    "weights": [0.34, 0.97, 0.39, 0.8, 0.57, 0.41, 0.19, 0.87, 0.06, 0.34],
                    })
 
-lasso_expr = pl.col("y").least_squares.lasso(pl.col("x1"), pl.col("x2"), alpha=0.0001, add_intercept=True).over("group")
+lasso_expr = pl.col("y").least_squares.lasso("x1", "x2", alpha=0.0001, add_intercept=True).over("group")
 wls_expr = pls.compute_least_squares_from_formula("y ~ x1 + x2 -1", sample_weights=pl.col("weights"))
 
 predictions = df.with_columns(lasso_expr.round(2).alias("predictions_lasso"),
@@ -154,6 +154,7 @@ Currently, this extension package supports the following variants:
 - Weighted Least Squares: ```least_squares.wls```
 - Regularized Least Squares (Lasso / Ridge / Elastic Net) ```least_squares.{lasso, ridge, elastic_net}```
 - Non-negative Least Squares: ```least_squares.nnls```
+- Multi-target Least Squares:  ```least_squares.multi_target_ols```
 
 As well as efficient implementations of moving window models:
 - Recursive Least Squares: ```least_squares.rls```
