@@ -90,6 +90,7 @@ def test_multi_target_regression(alpha, mode, null_policy):
         n_features=3,
         add_missing=null_policy not in {"zero", "ignore"},
         missing_columns=("x1",),
+        n_groups=3,
     )
     df = df.with_columns(
         pl.struct(
@@ -104,24 +105,24 @@ def test_multi_target_regression(alpha, mode, null_policy):
         multi_target = df.select(
             compute_multi_target_least_squares(
                 "y",
-                "x1",
-                "x2",
-                "x3",
+                pl.col("^x.*$"),
                 mode=mode,
                 ols_kwargs=ols_kwargs,
-            ).alias(mode)
+            )
+            .over("group")
+            .alias(mode)
         )
 
     with timer("compute multiple linear regressions"):
         expected = df.unnest("y").select(
             compute_least_squares(
                 target,
-                "x1",
-                "x2",
-                "x3",
+                pl.col("^x.*$"),
                 mode=mode,
                 ols_kwargs=ols_kwargs,
-            ).alias(target)
+            )
+            .over("group")
+            .alias(target)
             for target in ("y1", "y2", "y3")
         )
 
@@ -131,25 +132,15 @@ def test_multi_target_regression(alpha, mode, null_policy):
 def test_fit_missing_data_coefficients():
     df = _make_data(add_missing=True)
 
-    # # in presence of unhandled nulls assert the rust library raises ComputeError
-    # with pytest.raises(pl.exceptions.ComputeError):
-    #     df.select(
-    #         pl.col("y").least_squares.ols(
-    #             pl.col("x1"), pl.col("x2"), null_policy="ignore", mode="coefficients"
-    #         )
-    #     )
-
     # test rust zero policy is sane
     assert np.allclose(
         df.select(
-            pl.col("y").least_squares.ols(
-                pl.col("x1"), pl.col("x2"), null_policy="zero", mode="coefficients"
-            )
+            pl.col("y").least_squares.ols(pl.col("^x.*$"), null_policy="zero", mode="coefficients")
         ).unnest("coefficients"),
         df.fill_null(0.0)
         .select(
             pl.col("y").least_squares.ols(
-                pl.col("x1"), pl.col("x2"), null_policy="ignore", mode="coefficients"
+                pl.col("^x.*$"), null_policy="ignore", mode="coefficients"
             )
         )
         .unnest("coefficients"),
@@ -158,14 +149,12 @@ def test_fit_missing_data_coefficients():
     # test rust drop (any) policy is sane
     assert np.allclose(
         df.select(
-            pl.col("y").least_squares.ols(
-                pl.col("x1"), pl.col("x2"), null_policy="drop", mode="coefficients"
-            )
+            pl.col("y").least_squares.ols(pl.col("^x.*$"), null_policy="drop", mode="coefficients")
         ).unnest("coefficients"),
         df.drop_nulls()
         .select(
             pl.col("y").least_squares.ols(
-                pl.col("x1"), pl.col("x2"), null_policy="ignore", mode="coefficients"
+                pl.col("^x.*$"), null_policy="ignore", mode="coefficients"
             )
         )
         .unnest("coefficients"),
@@ -175,14 +164,14 @@ def test_fit_missing_data_coefficients():
     assert np.allclose(
         df.select(
             pl.col("y").least_squares.ols(
-                pl.col("x1"), pl.col("x2"), null_policy="drop_y_zero_x", mode="coefficients"
+                pl.col("^x.*$"), null_policy="drop_y_zero_x", mode="coefficients"
             )
         ).unnest("coefficients"),
         df.drop_nulls(subset=["y"])
         .fill_null(0.0)
         .select(
             pl.col("y").least_squares.ols(
-                pl.col("x1"), pl.col("x2"), null_policy="ignore", mode="coefficients"
+                pl.col("^x.*$"), null_policy="ignore", mode="coefficients"
             )
         )
         .unnest("coefficients"),
@@ -393,7 +382,7 @@ def test_coefficients_ols_groups():
         df.select(
             "group",
             pl.col("y")
-            .least_squares.from_formula("x1 + x2 -1", mode="coefficients")
+            .least_squares.ols(pl.col("^x.*$"), mode="coefficients")
             .over("group")
             .alias("coefficients"),
         )
@@ -406,7 +395,7 @@ def test_coefficients_ols_groups():
         df.filter(pl.col("group") == 1)
         .select(
             pl.col("y")
-            .least_squares.from_formula("x1 + x2 -1", mode="coefficients")
+            .least_squares.ols(pl.col("^x.*$"), mode="coefficients")
             .alias("coefficients")
         )
         .unnest("coefficients")
