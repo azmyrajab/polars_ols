@@ -1916,7 +1916,7 @@ dependencies = [
 
 [[package]]
 name = "polars_ols"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "approx",
  "blas-src",

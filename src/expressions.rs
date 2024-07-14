@@ -440,6 +440,24 @@ fn least_squares_coefficients(inputs: &[Series], kwargs: OLSKwargs) -> PolarsRes
     Ok(series.with_name("coefficients"))
 }
 
+fn least_squares_statistics(inputs: &[Series], kwargs: OLSKwargs) -> PolarsResult<Series> {
+    let null_policy = kwargs.get_null_policy();
+    let is_valid = compute_is_valid_mask(inputs, &null_policy, None);
+    let (y_fit, x_fit) = convert_polars_to_ndarray(inputs, &null_policy, is_valid.as_ref());
+    let coefficients = _get_least_squares_coefficients(&y_fit, &x_fit, kwargs);
+    let predictions = x_fit.dot(&coefficients);
+
+    // Compute MSE
+    let mse = compute_mse(&y_fit, &predictions);
+
+    // Compute MAE
+    let mae = compute_mae(&y_fit, &predictions);
+
+    // Compute R2
+    let r2 = compute_r2(&y_fit, &predictions);
+
+}
+
 fn multi_target_struct_dtype(input_fields: &[Field]) -> PolarsResult<Field> {
     let dtype = input_fields[0].dtype.to_owned();
     assert!(

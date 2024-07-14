@@ -6,6 +6,7 @@ use jemallocator::Jemalloc;
 
 mod expressions;
 pub mod least_squares;
+mod statistics;
 
 #[cfg(test)]
 mod tests {
