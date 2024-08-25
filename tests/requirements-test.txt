@@ -1,6 +1,6 @@
 # requirements for testing
 maturin
-polars
+polars[pandas,pyarrow]
 numpy
 pytest
 statsmodels

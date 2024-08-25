@@ -8,8 +8,9 @@ use faer::Side;
 use faer_ext::{IntoFaer, IntoNdarray};
 
 #[allow(unused_imports)]
-use ndarray::{array, s, Array, Array1, Array2, ArrayBase, ArrayView1, Axis, Dimension, Ix2, NewAxis,
-    OwnedRepr, Dim,
+use ndarray::{
+    array, s, Array, Array1, Array2, ArrayBase, ArrayView1, Axis, Dim, Dimension, Ix2, NewAxis,
+    OwnedRepr,
 };
 
 #[cfg(any(
@@ -27,6 +28,7 @@ pub fn inv(array: &Array2<f64>, use_cholesky: bool) -> Array2<f64> {
                 return cholesky.inverse().as_ref().into_ndarray().to_owned();
             }
             Err(_) => {
+                #[cfg(debug_assertions)]
                 println!("Cholesky decomposition failed, falling back to LU decomposition");
             }
         }
@@ -254,7 +256,7 @@ pub fn solve_multi_target(
 ) -> Array2<f64> {
     // handle degenerate case of no data
     if x.is_empty() {
-        return Array2::zeros((x.ncols(), y.ncols()));  // n_features x n_targets
+        return Array2::zeros((x.ncols(), y.ncols())); // n_features x n_targets
     }
     // Choose SVD implementation based on L2 regularization
     let alpha = alpha.unwrap_or(0.0);
@@ -308,10 +310,12 @@ fn solve_normal_equations(
 
                     match fallback_solve_method {
                         SolveMethod::SVD => {
+                            #[cfg(debug_assertions)]
                             println!("Cholesky decomposition failed, falling back to SVD");
                             solve_ols_svd(xty, xtx, None)
                         }
                         SolveMethod::LU => {
+                            #[cfg(debug_assertions)]
                             println!(
                                 "Cholesky decomposition failed, \
                             falling back to LU w/ pivoting"
@@ -319,6 +323,7 @@ fn solve_normal_equations(
                             solve_ols_lu(xty, xtx)
                         }
                         SolveMethod::QR => {
+                            #[cfg(debug_assertions)]
                             println!("Cholesky decomposition failed, falling back to QR");
                             solve_ols_qr(xty, xtx)
                         }
@@ -870,6 +875,7 @@ pub fn solve_rolling_ols(
     // we allow the user to pass a min_periods < k, but this may result in
     // unstable warm-up coefficients - so warn the user.
     if !(min_periods >= k && min_periods <= window_size) {
+        #[cfg(debug_assertions)]
         println!(
             "warning: min_periods should be greater or equal to the number of regressors \
                   in the model and less than or equal to the window size otherwise \
@@ -893,6 +899,7 @@ pub fn solve_rolling_ols(
     }
 
     if n < max(n_valid, min_periods) {
+        #[cfg(debug_assertions)]
         println!(
             "warning: number of valid observations detected is less than 'min_periods' set, \
              returning NaN coefficients!"

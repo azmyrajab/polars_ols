@@ -19,11 +19,9 @@ from typing import (
 from polars.plugins import register_plugin_function
 
 from polars_ols.utils import build_expressions_from_patsy_formula, parse_into_expr
+import polars as pl
 
 if TYPE_CHECKING:
-    import polars as pl
-    from polars.type_aliases import IntoExpr
-
     ExprOrStr = Union[pl.Expr, str]
 
 logger = logging.getLogger(__name__)
@@ -56,7 +54,7 @@ NullPolicy = Literal[
     "drop_window",  # only relevant to rolling window regression: this causes any observations
     # with nulls to be omitted and only valid observations within the fixed window are used.
 ]
-OutputMode = Literal["predictions", "residuals", "coefficients"]
+OutputMode = Literal["predictions", "residuals", "coefficients", "statistics"]
 SolveMethod = Literal["qr", "svd", "chol", "lu", "cd", "cd_active_set"]
 
 _VALID_NULL_POLICIES: Set[NullPolicy] = set(get_args(NullPolicy))
@@ -212,10 +210,10 @@ def _register_least_squares_plugin(
     target_fit, features_fit, sqrt_w = _pre_process_data(target, *features, **kwargs)
 
     # register either coefficient or prediction plugin functions
-    if mode == "coefficients":
+    if mode in {"coefficients", "statistics"}:
         return register_plugin_function(
             plugin_path=Path(__file__).parent,
-            function_name=f"{function_name}_coefficients",
+            function_name=f"{function_name}_{mode}",
             args=[target_fit, *features_fit],
             kwargs=ols_kwargs.to_dict(),
             is_elementwise=False,
@@ -223,7 +221,7 @@ def _register_least_squares_plugin(
             returns_scalar=returns_scalar_coefficients,
             input_wildcard_expansion=True,
             pass_name_to_apply=True,
-        ).alias("coefficients")
+        ).alias(mode)
     else:
         predictions = register_plugin_function(
             plugin_path=Path(__file__).parent,
@@ -355,7 +353,8 @@ def compute_recursive_least_squares(
     Returns:
         Resulting expression based on the chosen mode.
     """
-    assert mode in _VALID_OUTPUT_MODES, f"'mode' must be one of {_VALID_OUTPUT_MODES}"
+    valid_output_modes = _VALID_OUTPUT_MODES - {"statistics"}
+    assert mode in valid_output_modes, f"'mode' must be one of {valid_output_modes}"
     rls_kwargs: RLSKwargs = rls_kwargs or RLSKwargs()
     # register either coefficient or prediction plugin functions
     return _register_least_squares_plugin(
@@ -391,7 +390,8 @@ def compute_rolling_least_squares(
     Returns:
         Resulting expression based on the chosen mode.
     """
-    assert mode in _VALID_OUTPUT_MODES, f"'mode' must be one of {_VALID_OUTPUT_MODES}"
+    valid_output_modes = _VALID_OUTPUT_MODES - {"statistics"}
+    assert mode in valid_output_modes, f"'mode' must be one of {valid_output_modes}"
     rolling_kwargs: RollingKwargs = rolling_kwargs or RollingKwargs()
     # register either coefficient or prediction plugin functions
     expr = _register_least_squares_plugin(
@@ -479,7 +479,7 @@ def predict(
         if any(f.meta.output_name == "const" for f in features):
             logger.warning("feature named 'const' already detected, assuming it is the intercept")
         else:
-            features += (features[-1].fill_null(0.0).mul(0.0).add(1.0).alias("const"),)
+            features += (pl.lit(1.0).alias("const"),)
     return register_plugin_function(
         plugin_path=Path(__file__).parent,
         function_name="predict",

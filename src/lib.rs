@@ -1,3 +1,5 @@
+extern crate core;
+
 use pyo3::types::PyModule;
 use pyo3::{pymodule, PyResult, Python};
 

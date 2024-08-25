@@ -1,12 +1,10 @@
 #![allow(clippy::unit_arg, clippy::unused_unit)]
+
 use ndarray::{s, Array, Array1, Array2, Axis};
 use polars::datatypes::{DataType, Field, Float64Type};
 use polars::error::{polars_err, PolarsResult};
 use polars::frame::DataFrame;
-use polars::prelude::{
-    lit, BooleanChunked, FillNullStrategy, IndexOrder, IntoLazy, IntoSeries, NamedFrom,
-    NamedFromOwned, Series, NULL,
-};
+use polars::prelude::{lit, BooleanChunked, FillNullStrategy, IndexOrder, IntoLazy, IntoSeries, NamedFrom, NamedFromOwned, Series, NULL, ChunkFillNullValue};
 use pyo3_polars::derive::polars_expr;
 use serde::Deserialize;
 use std::str::FromStr;
@@ -15,6 +13,7 @@ use crate::least_squares::{
     solve_elastic_net, solve_multi_target, solve_ols, solve_recursive_least_squares, solve_ridge,
     solve_rolling_ols, NullPolicy, SolveMethod,
 };
+use crate::statistics::{compute_feature_metrics, compute_residual_metrics};
 
 /// convert a slice of polars series into a 2D feature array.
 fn construct_features_array(inputs: &[Series], fill_zero: bool) -> Array2<f64> {
@@ -32,27 +31,28 @@ fn construct_features_array(inputs: &[Series], fill_zero: bool) -> Array2<f64> {
                     .expect("failed to cast inputs to f64")
                     .fill_null(FillNullStrategy::Zero)
                     .unwrap();
-                let s = s.rechunk();
                 let s = s
                     .f64()
-                    .unwrap()
-                    // .expect("Failed to convert polars series to f64 array")
+                    .expect("Failed to convert polars series to f64 array")
+                    .rechunk();
+                let array = s
                     .to_ndarray()
                     .expect("Failed to convert f64 series to ndarray");
-                col.assign(&s);
+                col.assign(&array);
             } else {
                 let s = inputs[j]
                     .cast(&DataType::Float64)
                     .expect("failed to cast inputs to f64");
-                let s = s.rechunk();
                 // Convert Series to ndarray
                 let s = s
                     .f64()
+                    .expect("Failed to convert polars series to f64 array")
+                    .fill_null_with_values(f64::NAN)
                     .unwrap()
-                    // .expect("Failed to convert polars series to f64 array")
-                    .to_ndarray()
+                    .rechunk();
+                let array = s.to_ndarray()
                     .expect("Failed to convert f64 series to ndarray");
-                col.assign(&s);
+                col.assign(&array);
             }
         });
     x
@@ -75,10 +75,13 @@ pub fn convert_polars_to_ndarray(
     let y = filtered_inputs[0]
         .cast(&DataType::Float64)
         .expect("Failed to cast targets series to f64");
-    let y = y.rechunk();
+
     let y = y
         .f64()
         .expect("Failed to convert polars series to f64 array")
+        .fill_null_with_values(f64::NAN)
+        .unwrap()
+        .rechunk()
         .to_ndarray()
         .expect("Failed to convert f64 series to ndarray")
         .to_owned();
@@ -115,8 +118,6 @@ fn convert_array_to_struct_series(
             .axis_iter(Axis(1))
             .enumerate()
             .map(|(i, col)| {
-                // TODO: clean below up once https://github.com/pola-rs/pyo3-polars/issues/79
-                //  is resolved
                 let i_str = i.to_string();
                 let name = if feature_names[i].is_empty() {
                     i_str.as_ref()
@@ -440,22 +441,56 @@ fn least_squares_coefficients(inputs: &[Series], kwargs: OLSKwargs) -> PolarsRes
     Ok(series.with_name("coefficients"))
 }
 
+
+fn statistics_struct_dtype(_input_fields: &[Field]) -> PolarsResult<Field> {
+    // Define the fields for the statistics struct
+    let fields = vec![
+        Field::new("r2", DataType::Float64),
+        Field::new("mae", DataType::Float64),
+        Field::new("mse", DataType::Float64),
+        Field::new("feature_names", DataType::List(Box::new(DataType::String))),
+        Field::new("coefficients", DataType::List(Box::new(DataType::Float64))),
+        Field::new("standard_errors", DataType::List(Box::new(DataType::Float64))),
+        Field::new("t_values", DataType::List(Box::new(DataType::Float64))),
+        Field::new("p_values", DataType::List(Box::new(DataType::Float64))),
+    ];
+
+    // Create a struct type field with the defined fields
+    Ok(Field::new("statistics", DataType::Struct(fields)))
+}
+
+#[polars_expr(output_type_func=statistics_struct_dtype)]
 fn least_squares_statistics(inputs: &[Series], kwargs: OLSKwargs) -> PolarsResult<Series> {
     let null_policy = kwargs.get_null_policy();
     let is_valid = compute_is_valid_mask(inputs, &null_policy, None);
     let (y_fit, x_fit) = convert_polars_to_ndarray(inputs, &null_policy, is_valid.as_ref());
+
+    let lambda = kwargs.alpha.unwrap();
     let coefficients = _get_least_squares_coefficients(&y_fit, &x_fit, kwargs);
     let predictions = x_fit.dot(&coefficients);
 
-    // Compute MSE
-    let mse = compute_mse(&y_fit, &predictions);
+    let residual_metrics = compute_residual_metrics(&y_fit, &predictions);
+    let feature_metrics = compute_feature_metrics(&x_fit, &y_fit, lambda);
 
-    // Compute MAE
-    let mae = compute_mae(&y_fit, &predictions);
+    let feature_names: Vec<&str> = inputs[1..].iter().map(|input| input.name()).collect();
+    let feature_names = Series::from_iter(feature_names);
 
-    // Compute R2
-    let r2 = compute_r2(&y_fit, &predictions);
+    // Create a DataFrame with a single row for the metrics
+    let metrics_df = DataFrame::new(vec![
+        Series::new("r2", &[residual_metrics.r2]),
+        Series::new("mae", &[residual_metrics.mae]),
+        Series::new("mse", &[residual_metrics.mse]),
+        Series::new("feature_names", [feature_names]),
+        Series::new("coefficients", [coefficients.iter().collect::<Series>()]),
+        Series::new("standard_errors", [feature_metrics.standard_errors.iter().collect::<Series>()]),
+        Series::new("t_values", [feature_metrics.t_values.iter().collect::<Series>()]),
+        Series::new("p_values", [feature_metrics.p_values.iter().collect::<Series>()]),
+    ])?;
 
+    // Convert DataFrame to a Series of struct dtype
+    let metrics_series = metrics_df.into_struct("statistics").into_series();
+
+    Ok(metrics_series)
 }
 
 fn multi_target_struct_dtype(input_fields: &[Field]) -> PolarsResult<Field> {
