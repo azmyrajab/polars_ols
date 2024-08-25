@@ -4,7 +4,6 @@ import pyperf
 import scipy
 import statsmodels.formula.api as smf
 from sklearn.linear_model import ElasticNet, LinearRegression, Ridge
-from statsmodels.regression.recursive_ls import RecursiveLS
 from statsmodels.regression.rolling import RollingOLS
 
 import polars_ols as pls  # import package to register the .least_squares namespace
@@ -182,6 +181,8 @@ def benchmark_rolling_least_squares_statsmodels(data: pl.DataFrame):
 
 
 def benchmark_recursive_least_squares_statsmodels(data: pl.DataFrame):
+    from statsmodels.regression.recursive_ls import RecursiveLS
+
     x = data.select(pl.all().exclude("y")).to_numpy()
     res = RecursiveLS(
         df["y"].to_numpy(),

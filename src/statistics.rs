@@ -1,8 +1,7 @@
 use faer::solvers::SolverCore;
 use faer::Side::Lower;
 use faer_ext::{IntoFaer, IntoNdarray};
-use ndarray::{Array1, Array2};
-use ndarray_linalg::Trace;
+use ndarray::{Array1, Array2, ArrayView2};
 use statrs::distribution::{ContinuousCDF, StudentsT};
 
 pub struct ResidualMetrics {
@@ -46,6 +45,20 @@ fn t_value_to_p_value(t_value: f64, df: f64) -> f64 {
     let t_dist =
         StudentsT::new(0.0, 1.0, df).expect("Invalid parameters for StudentT distribution");
     2.0 * (1.0 - t_dist.cdf(t_value.abs()))
+}
+
+// Function to compute the trace of a square matrix
+fn trace(matrix: ArrayView2<f64>) -> f64 {
+    // Ensure the matrix is square
+    assert_eq!(matrix.nrows(), matrix.ncols(), "Matrix must be square!");
+
+    // Sum the diagonal elements
+    let mut trace_sum = 0.0;
+    for i in 0..matrix.nrows() {
+        trace_sum += matrix[(i, i)];
+    }
+
+    trace_sum
 }
 
 /// Computes standard errors and t-values for regression coefficients using Ridge Regression.
@@ -98,7 +111,7 @@ pub fn compute_feature_metrics(
     // Estimate variance: σ^2 = RSS / (n - p + k)
     let rss = residuals.mapv(|r| r.powi(2)).sum();
     let df = if lambda > 0.0 {
-        n - p + xtx_inv.trace().unwrap_or(0.0)
+        n - trace(xtx_inv) // .trace().unwrap_or(0.0)
     } else {
         n - p
     };
