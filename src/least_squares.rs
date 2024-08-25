@@ -388,8 +388,8 @@ fn soft_threshold(x: &f64, alpha: f64, positive: bool) -> f64 {
 
 /// Solves an elastic net regression problem of the form: 1 / (2 * n_samples) * ||y - Xw||_2
 /// + alpha * l1_ratio * ||w||_1 + 0.5 * alpha * (1 - l1_ratio) * ||w||_2.
-/// Uses cyclic coordinate descent with efficient 'naive updates' and a
-/// general soft thresholding function.
+///   Uses cyclic coordinate descent with efficient 'naive updates' and a
+///   general soft thresholding function.
 #[allow(clippy::too_many_arguments)]
 pub fn solve_elastic_net(
     y: &Array1<f64>,
