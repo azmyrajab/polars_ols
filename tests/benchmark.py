@@ -34,7 +34,7 @@ def _make_data(
         w *= sparsity_mask
         y = x @ w + eps
         return features.with_columns(
-            pl.lit(y).list.to_struct(fields=[f"y{i}" for i in range(n_targets)]).alias("y")
+            pl.DataFrame(y, schema=[f"y{i}" for i in range(n_targets)]).to_struct("y")
         )
 
 

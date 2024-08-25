@@ -3,8 +3,7 @@ use faer::Side::Lower;
 use faer_ext::{IntoFaer, IntoNdarray};
 use ndarray::{Array1, Array2};
 use ndarray_linalg::Trace;
-use statrs::distribution::{StudentsT, ContinuousCDF};
-
+use statrs::distribution::{ContinuousCDF, StudentsT};
 
 pub struct ResidualMetrics {
     pub mse: f64,
@@ -43,11 +42,10 @@ pub struct FeatureMetrics {
     pub p_values: Array1<f64>,
 }
 
-
 fn t_value_to_p_value(t_value: f64, df: f64) -> f64 {
-    let t_dist = StudentsT::new(0.0, 1.0, df).expect("Invalid parameters for StudentT distribution");
-    let p_value = 2.0 * (1.0 - t_dist.cdf(t_value.abs()));
-    p_value
+    let t_dist =
+        StudentsT::new(0.0, 1.0, df).expect("Invalid parameters for StudentT distribution");
+    2.0 * (1.0 - t_dist.cdf(t_value.abs()))
 }
 
 /// Computes standard errors and t-values for regression coefficients using Ridge Regression.
@@ -121,10 +119,10 @@ pub fn compute_feature_metrics(
         .map(|(&coef, &se)| coef / se)
         .collect::<Array1<f64>>();
 
-    let p_values: Array1<f64> = t_values.iter()
+    let p_values: Array1<f64> = t_values
+        .iter()
         .map(|&t| t_value_to_p_value(t, df))
         .collect();
-
 
     FeatureMetrics {
         standard_errors,

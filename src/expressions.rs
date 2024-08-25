@@ -4,7 +4,10 @@ use ndarray::{s, Array, Array1, Array2, Axis};
 use polars::datatypes::{DataType, Field, Float64Type};
 use polars::error::{polars_err, PolarsResult};
 use polars::frame::DataFrame;
-use polars::prelude::{lit, BooleanChunked, FillNullStrategy, IndexOrder, IntoLazy, IntoSeries, NamedFrom, NamedFromOwned, Series, NULL, ChunkFillNullValue};
+use polars::prelude::{
+    lit, BooleanChunked, ChunkFillNullValue, FillNullStrategy, IndexOrder, IntoLazy, IntoSeries,
+    NamedFrom, NamedFromOwned, Series, NULL,
+};
 use pyo3_polars::derive::polars_expr;
 use serde::Deserialize;
 use std::str::FromStr;
@@ -50,7 +53,8 @@ fn construct_features_array(inputs: &[Series], fill_zero: bool) -> Array2<f64> {
                     .fill_null_with_values(f64::NAN)
                     .unwrap()
                     .rechunk();
-                let array = s.to_ndarray()
+                let array = s
+                    .to_ndarray()
                     .expect("Failed to convert f64 series to ndarray");
                 col.assign(&array);
             }
@@ -441,7 +445,6 @@ fn least_squares_coefficients(inputs: &[Series], kwargs: OLSKwargs) -> PolarsRes
     Ok(series.with_name("coefficients"))
 }
 
-
 fn statistics_struct_dtype(_input_fields: &[Field]) -> PolarsResult<Field> {
     // Define the fields for the statistics struct
     let fields = vec![
@@ -450,7 +453,10 @@ fn statistics_struct_dtype(_input_fields: &[Field]) -> PolarsResult<Field> {
         Field::new("mse", DataType::Float64),
         Field::new("feature_names", DataType::List(Box::new(DataType::String))),
         Field::new("coefficients", DataType::List(Box::new(DataType::Float64))),
-        Field::new("standard_errors", DataType::List(Box::new(DataType::Float64))),
+        Field::new(
+            "standard_errors",
+            DataType::List(Box::new(DataType::Float64)),
+        ),
         Field::new("t_values", DataType::List(Box::new(DataType::Float64))),
         Field::new("p_values", DataType::List(Box::new(DataType::Float64))),
     ];
@@ -482,9 +488,18 @@ fn least_squares_statistics(inputs: &[Series], kwargs: OLSKwargs) -> PolarsResul
         Series::new("mse", &[residual_metrics.mse]),
         Series::new("feature_names", [feature_names]),
         Series::new("coefficients", [coefficients.iter().collect::<Series>()]),
-        Series::new("standard_errors", [feature_metrics.standard_errors.iter().collect::<Series>()]),
-        Series::new("t_values", [feature_metrics.t_values.iter().collect::<Series>()]),
-        Series::new("p_values", [feature_metrics.p_values.iter().collect::<Series>()]),
+        Series::new(
+            "standard_errors",
+            [feature_metrics.standard_errors.iter().collect::<Series>()],
+        ),
+        Series::new(
+            "t_values",
+            [feature_metrics.t_values.iter().collect::<Series>()],
+        ),
+        Series::new(
+            "p_values",
+            [feature_metrics.p_values.iter().collect::<Series>()],
+        ),
     ])?;
 
     // Convert DataFrame to a Series of struct dtype

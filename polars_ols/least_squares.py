@@ -16,10 +16,10 @@ from typing import (
     get_args,
 )
 
+import polars as pl
 from polars.plugins import register_plugin_function
 
 from polars_ols.utils import build_expressions_from_patsy_formula, parse_into_expr
-import polars as pl
 
 if TYPE_CHECKING:
     ExprOrStr = Union[pl.Expr, str]

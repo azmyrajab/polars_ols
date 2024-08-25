@@ -77,8 +77,9 @@ shape: (5, 7)
 └───────┴───────┴───────┴───────┴─────────┴───────────────────┴─────────────────┘
 ```
 
-The `mode` parameter is used to set the type of the output returned by all methods (`"predictions", "residuals", "coefficients"`).
+The `mode` parameter is used to set the type of the output returned by all methods (`"predictions", "residuals", "coefficients", "statistics"`).
 It defaults to returning predictions matching the input's length.
+Note that `"statistics"` is currently only supported for OLS/WLS/Ridge models.
 
 In case `"coefficients"` is set the output is a [polars Struct](https://docs.pola.rs/user-guide/expressions/structs/) with coefficients as values and feature names as fields.
 It's output shape 'broadcasts' depending on context, see below:
@@ -135,6 +136,33 @@ shape: (5, 6)
 │ 0.21  ┆ 0.05  ┆ 0.23  ┆ 1     ┆ 0.8     ┆ {0.975657,0.953735} │
 │ 0.22  ┆ -0.07 ┆ 0.44  ┆ 1     ┆ 0.57    ┆ {0.97898,0.909793}  │
 └───────┴───────┴───────┴───────┴─────────┴─────────────────────┘
+```
+
+For plain OLS/WLS and Ridge models, support has been recently added for producing a simple statistical significance
+report. It can be used as such:
+
+```python
+statistics = (df.select(
+   pl.col("y").least_squares.ols(pl.col("x1", "x2"), mode="statistics", add_intercept=True)
+)
+.unnest("statistics")  # results stored in a nested series by default
+.explode(["feature_names", "coefficients", "standard_errors", "t_values", "p_values"])
+)
+
+print(statistics)
+```
+```
+shape: (3, 8)
+┌─────────┬──────────┬─────────┬──────────────┬──────────────┬─────────────┬───────────┬───────────┐
+│ r2      ┆ mae      ┆ mse     ┆ feature_name ┆ coefficients ┆ standard_er ┆ t_values  ┆ p_values  │
+│ ---     ┆ ---      ┆ ---     ┆ s            ┆ ---          ┆ rors        ┆ ---       ┆ ---       │
+│ f64     ┆ f64      ┆ f64     ┆ ---          ┆ f64          ┆ ---         ┆ f64       ┆ f64       │
+│         ┆          ┆         ┆ str          ┆              ┆ f64         ┆           ┆           │
+╞═════════╪══════════╪═════════╪══════════════╪══════════════╪═════════════╪═══════════╪═══════════╡
+│ 0.99631 ┆ 0.061732 ┆ 0.00794 ┆ x1           ┆ 0.977375     ┆ 0.037286    ┆ 26.212765 ┆ 3.0095e-8 │
+│ 0.99631 ┆ 0.061732 ┆ 0.00794 ┆ x2           ┆ 0.987413     ┆ 0.037321    ┆ 26.457169 ┆ 2.8218e-8 │
+│ 0.99631 ┆ 0.061732 ┆ 0.00794 ┆ const        ┆ 0.000757     ┆ 0.037474    ┆ 0.02021   ┆ 0.98444   │
+└─────────┴──────────┴─────────┴──────────────┴──────────────┴─────────────┴───────────┴───────────┘
 ```
 
 Finally, for convenience, in order to compute out-of-sample predictions you can use:

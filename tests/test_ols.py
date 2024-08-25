@@ -2,6 +2,7 @@ from typing import Optional, Tuple
 
 import numpy as np
 import polars as pl
+import polars.selectors as cs
 import pytest
 import statsmodels.formula.api as smf
 from sklearn.linear_model import ElasticNet, Ridge
@@ -16,7 +17,6 @@ from polars_ols import (
     compute_multi_target_least_squares,
 )
 from polars_ols.utils import timer
-import polars.selectors as cs
 
 
 def _make_data(
@@ -53,9 +53,6 @@ def _make_data(
 
 @pytest.mark.parametrize("solve_method", ("qr", "svd", "chol", "lu", None))
 def test_ols(solve_method: SolveMethod):
-    import os
-
-    os.environ["POLARS_VERBOSE"] = "1"
     df = _make_data(n_samples=1_000, n_features=2)
     # compute OLS w/ polars-ols
     with timer(f"\nOLS {solve_method}", precision=5):
@@ -946,8 +943,11 @@ def test_predict():
     )
     assert np.allclose(predictions, expected)
 
+
 def test_predict_intercept():
-    df = pl.DataFrame({"y": [1, 2, 3, 4], "x1": [3, 4, 5, 6], "x2": [4, 5, 6, 7], "x3": [5, 6, 7, 8]})
+    df = pl.DataFrame(
+        {"y": [1, 2, 3, 4], "x1": [3, 4, 5, 6], "x2": [4, 5, 6, 7], "x3": [5, 6, 7, 8]}
+    )
     df = df.with_columns(
         pl.col("y").least_squares.ols(
             cs.starts_with("x"),
@@ -956,10 +956,12 @@ def test_predict_intercept():
         )
     )
     df = df.with_columns(
-        pl.col("coefficients").least_squares.predict(
+        pl.col("coefficients")
+        .least_squares.predict(
             cs.starts_with("x"),
             add_intercept=True,
-        ).alias("y_pred")
+        )
+        .alias("y_pred")
     )
     assert np.allclose(df["y"], df["y_pred"])
 
@@ -971,32 +973,37 @@ def test_non_contiguous():
     rng = np.random.default_rng(0)
     df = df.with_columns(pl.lit(rng.uniform(low=0.0, high=10.0, size=len(df))).alias("weights"))
 
-    df = (df
-    .lazy()
-    .with_columns(
-        pl.col("y").least_squares.rolling_ols(
-            cs.starts_with("x"), window_size=100, min_periods=1,
-            null_policy="drop",
-            sample_weights="weights", mode="coefficients")
-        .over("group"),
+    df = (
+        df.lazy()
+        .with_columns(
+            pl.col("y")
+            .least_squares.rolling_ols(
+                cs.starts_with("x"),
+                window_size=100,
+                min_periods=1,
+                null_policy="drop",
+                sample_weights="weights",
+                mode="coefficients",
+            )
+            .over("group"),
+        )
+        .with_columns(pl.col("coefficients").least_squares.predict(cs.starts_with("x")))
+        .collect()
     )
-    .with_columns(pl.col("coefficients").least_squares.predict(cs.starts_with("x")))
-    .collect()
+    assert df.select("coefficients").unnest("coefficients")[-1].to_numpy().mean() == pytest.approx(
+        1.0, rel=0.01, abs=0.01
     )
-    assert (df.select("coefficients").unnest("coefficients")[-1].to_numpy().mean()
-            == pytest.approx(1.0, rel=0.01, abs=0.01))
+
 
 def test_least_squares_statistics():
     df = _make_data()
-    statistics = (df.select(
-            pl.col("y").least_squares.ols(cs.starts_with("x"),
-                                          mode="statistics",
-                                          add_intercept=True)
-        )
-    .unnest('statistics')
-    )
+    statistics = df.select(
+        pl.col("y").least_squares.ols(cs.starts_with("x"), mode="statistics", add_intercept=True)
+    ).unnest("statistics")
 
-    residuals = df.select(pl.col("y").least_squares.ols(cs.starts_with("x"), mode="residuals", add_intercept=True))
+    residuals = df.select(
+        pl.col("y").least_squares.ols(cs.starts_with("x"), mode="residuals", add_intercept=True)
+    )
 
     res = smf.ols(formula="y ~ x1 + x2", data=df).fit()
     res.summary()
@@ -1007,8 +1014,9 @@ def test_least_squares_statistics():
     assert statistics["mse"].item() == pytest.approx(expected_mse)
 
     df_stats = (
-        statistics
-        .explode(["feature_names", "coefficients", "standard_errors", "t_values",  "p_values"])
+        statistics.explode(
+            ["feature_names", "coefficients", "standard_errors", "t_values", "p_values"]
+        )
         .to_pandas()
         .set_index("feature_names")
         .rename(index={"const": "Intercept"})
