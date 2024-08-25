@@ -19,11 +19,12 @@ num-traits = { version = "*" }
 approx = { version = "*" }
 ndarray = { version = "*", features = ["matrixmultiply-threading"] }
 statrs = "*"  # Check for the latest version
+pulp = { version = "0.18.22" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
-[target.'cfg(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x64")))'.dependencies]
+[target.'cfg(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x86")))'.dependencies]
 ndarray = { version = "*", features = ["blas"] }
 blas-src = { version = "*", features = ["intel-mkl"]}
 lapack-src = {version = "*", features = ["intel-mkl"]}
@@ -40,7 +41,7 @@ faer = { version = "*" }  # don't allow nightly for ARM due to issues with NEON 
 faer-ext = { version = "*", features = ["ndarray"] }
 
 [target.'cfg(not(target_arch = "arm"))'.dependencies]
-pulp = { version = "*", features = ["nightly"] } # 0.18.10
+pulp = { version = "0.18.22", features = ["nightly"] }
 faer = { version = "*", features = ["std", "rayon", "serde", "rand", "npy", "nightly"] }
 faer-ext = { version = "*", features = ["ndarray"] }
 

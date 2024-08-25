@@ -14,7 +14,7 @@ use ndarray::{
 };
 
 #[cfg(any(
-    all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x64")),
+    all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x86")),
     target_os = "macos"
 ))]
 use ndarray_linalg::LeastSquaresSvd;
@@ -171,7 +171,7 @@ where
 }
 
 #[cfg(not(any(
-    all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x64")),
+    all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x86")),
     target_os = "macos"
 )))]
 fn solve_ols_svd<D>(y: &Array<f64, D>, x: &Array2<f64>, rcond: Option<f64>) -> Array<f64, D>
@@ -184,7 +184,7 @@ where
 
 /// Solves least-squares regression using divide and conquer SVD. Thin wrapper to LAPACK: DGESLD.
 #[cfg(any(
-    all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x64")),
+    all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x86")),
     target_os = "macos"
 ))]
 #[allow(unused_variables)]

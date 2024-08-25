@@ -1966,7 +1966,7 @@ dependencies = [
 name = "polars_ols"
 version = "0.3.4"
 dependencies = [
- "approx 0.4.0",
+ "approx 0.5.1",
  "blas-src",
  "faer",
  "faer-ext",
@@ -2040,9 +2040,9 @@ dependencies = [
 
 [[package]]
 name = "pulp"
-version = "0.18.10"
+version = "0.18.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e14989307e408d9f4245d4fda09a7b144a08114ba124e26cab60ab83dc98db10"
+checksum = "a0a01a0dc67cf4558d279f0c25b0962bd08fc6dec0137699eae304103e882fe6"
 dependencies = [
  "bytemuck",
  "libm",
