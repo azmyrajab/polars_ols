@@ -40,7 +40,7 @@ faer = { version = "*" }  # don't allow nightly for ARM due to issues with NEON 
 faer-ext = { version = "*", features = ["ndarray"] }
 
 [target.'cfg(not(target_arch = "arm"))'.dependencies]
-pulp = { version = "0.18.10", features = ["nightly"] }
+pulp = { version = "*", features = ["nightly"] } # 0.18.10
 faer = { version = "*", features = ["std", "rayon", "serde", "rand", "npy", "nightly"] }
 faer-ext = { version = "*", features = ["ndarray"] }
 
