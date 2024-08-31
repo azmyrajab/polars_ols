@@ -1,7 +1,7 @@
 use faer::solvers::SolverCore;
 use faer::Side::Lower;
 use faer_ext::{IntoFaer, IntoNdarray};
-use ndarray::{Array1, Array2, ArrayView2};
+use ndarray::{Array, Array1, Array2, ArrayView2};
 use statrs::distribution::{ContinuousCDF, StudentsT};
 
 pub struct ResidualMetrics {
@@ -91,15 +91,26 @@ pub fn compute_feature_metrics(
     // Convert xtx_reg to a faer matrix
     let xtx_faer = xtx_reg.view().into_faer();
 
-    // Invert (X^T X + λI) using faer
-    let xtx_inv_faer = xtx_faer
-        .cholesky(Lower)
-        .expect("could not compute cholesky")
-        .inverse();
-    let xtx_inv = xtx_inv_faer.as_ref().into_ndarray();
+    let mut nans = Array::zeros(features.len());
+    nans.fill(f64::NAN);
 
     // Compute X^T y
     let xty = features.t().dot(targets);
+
+    // Invert (X^T X + λI) using faer
+    let inversion_result = xtx_faer.cholesky(Lower);
+    let xtx_inv_faer = match inversion_result {
+        Ok(xtx_inv) => xtx_inv.inverse(),
+        Err(_e) => {
+            return FeatureMetrics {
+                p_values: nans.clone(),
+                t_values: nans.clone(),
+                standard_errors: nans.clone(),
+            }
+        }
+    };
+
+    let xtx_inv = xtx_inv_faer.as_ref().into_ndarray();
 
     // Compute coefficients: β = (X^T X + λI)^(-1) X^T y
     let coefficients = xtx_inv.dot(&xty);
