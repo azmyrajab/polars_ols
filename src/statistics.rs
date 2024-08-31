@@ -91,7 +91,7 @@ pub fn compute_feature_metrics(
     // Convert xtx_reg to a faer matrix
     let xtx_faer = xtx_reg.view().into_faer();
 
-    let mut nans = Array::zeros(features.len());
+    let mut nans = Array::zeros(features.ncols());
     nans.fill(f64::NAN);
 
     // Compute X^T y
