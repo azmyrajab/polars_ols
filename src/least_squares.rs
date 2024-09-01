@@ -204,6 +204,7 @@ fn solve_ols_qr(y: &Array1<f64>, x: &Array2<f64>) -> Array1<f64> {
         .to_owned()
 }
 
+#[allow(clippy::too_long_first_doc_paragraph)]
 /// Solves an ordinary least squares problem using either QR (faer) or LAPACK SVD
 /// Inputs: features (2d ndarray), targets (1d ndarray), and an optional enum denoting solve method
 /// Outputs: 1-d OLS coefficients
