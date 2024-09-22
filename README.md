@@ -13,7 +13,7 @@ them as simple polars expressions which can easily be integrated into your workf
 2. **Polars Integration**: avoids unnecessary conversions from lazy to eager mode and to external libraries (e.g. numpy, sklearn) to do simple linear regressions.
 Chain least squares formulae like any other expression in polars.
 3. **Efficient Implementations**:
-   - Numerically stable algorithms are chosen where appropriate (e.g. QR, Cholesky).
+   - Numerically stable algorithms are chosen where appropriate (e.g. SVD, QR).
    - Flexible model specification allows arbitrary combination of sample weighting, L1/L2 regularization, & non-negativity constraints on parameters.
    - Efficient rank-1 update algorithms used for moving window regressions.
 4. **Easy Parallelism**: Computing OLS predictions, in parallel, across groups can not be easier: call `.over()` or `group_by` just like any other polars' expression and benefit from full Rust parallelism.
