@@ -4,6 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "polars-ols"
+version = "0.4.1"
 description = "Polars Least Squares Extension"
 requires-python = ">=3.8"
 classifiers = [
