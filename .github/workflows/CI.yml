@@ -1,6 +1,5 @@
 name: CI
 
-
 on:
   push:
     branches:
@@ -12,16 +11,14 @@ on:
   workflow_dispatch:
 
 concurrency:
-
   group: ${{ github.workflow }}-${{ github.ref }}
-
   cancel-in-progress: true
 
 permissions:
   contents: read
 
-# Make sure CI fails on all warnings, including Clippy lints
 env:
+  # Fail CI on warnings
   RUSTFLAGS: "-Dwarnings"
 
 jobs:
@@ -36,8 +33,11 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Set up Rust
-        run: rustup show
+      - name: Set up nightly Rust
+        run: |
+          rustup toolchain install nightly --component rustfmt --component clippy
+          rustup default nightly
+          rustup show
       - uses: mozilla-actions/sccache-action@v0.0.3
       - run: make venv
       - run: make pre-commit
@@ -55,8 +55,11 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Set up Rust
-        run: rustup show
+      - name: Set up nightly Rust
+        run: |
+          rustup toolchain install nightly --component rustfmt --component clippy
+          rustup default nightly
+          rustup show
       - uses: mozilla-actions/sccache-action@v0.0.3
       - run: make venv
       - run: make pre-commit
@@ -74,8 +77,11 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Set up Rust
-        run: rustup show
+      - name: Set up nightly Rust
+        run: |
+          rustup toolchain install nightly --component rustfmt --component clippy
+          rustup default nightly
+          rustup show
       - uses: mozilla-actions/sccache-action@v0.0.3
       - run: make venv
       - run: venv/bin/python -m pip install polars==0.20.16  # min supported version
@@ -86,15 +92,18 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        target: [ x86_64 ]
+        target: [x86_64]
         python-version: ["3.11"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Set up Rust
-        run: rustup show
+      - name: Set up nightly Rust
+        run: |
+          rustup toolchain install nightly --component rustfmt --component clippy
+          rustup default nightly
+          rustup show
       - uses: mozilla-actions/sccache-action@v0.0.3
       - run: make venv
       - run: make install-release
@@ -104,15 +113,18 @@ jobs:
     runs-on: macos-latest
     strategy:
       matrix:
-        target: [ x86_64 ]
+        target: [x86_64]
         python-version: ["3.11"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Set up Rust
-        run: rustup show
+      - name: Set up nightly Rust
+        run: |
+          rustup toolchain install nightly --component rustfmt --component clippy
+          rustup default nightly
+          rustup show
       - uses: mozilla-actions/sccache-action@v0.0.3
       - run: make venv
       - run: make install-release
@@ -128,6 +140,11 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
+      - name: Set up nightly Rust
+        run: |
+          rustup toolchain install nightly --component rustfmt --component clippy
+          rustup default nightly
+          rustup show
       - name: Set up Spack
         uses: spack/setup-spack@v2
         with:
@@ -159,6 +176,12 @@ jobs:
         with:
           python-version: '3.10'
           architecture: ${{ matrix.target }}
+      - name: Set up nightly Rust
+        shell: bash
+        run: |
+          rustup toolchain install nightly --component rustfmt --component clippy
+          rustup default nightly
+          rustup show
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -181,6 +204,11 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
+      - name: Set up nightly Rust
+        run: |
+          rustup toolchain install nightly --component rustfmt --component clippy
+          rustup default nightly
+          rustup show
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -197,6 +225,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Set up nightly Rust
+        run: |
+          rustup toolchain install nightly --component rustfmt --component clippy
+          rustup default nightly
+          rustup show
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:
@@ -215,11 +248,16 @@ jobs:
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
-      id-token: write  # IMPORTANT: mandatory for trusted publishing
+      id-token: write
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: wheels
+      - name: Set up nightly Rust
+        run: |
+          rustup toolchain install nightly --component rustfmt --component clippy
+          rustup default nightly
+          rustup show
       - name: Publish to PyPI
         uses: PyO3/maturin-action@v1
         with:
