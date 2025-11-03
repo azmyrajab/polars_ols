@@ -12,8 +12,8 @@ if TYPE_CHECKING:
 
 
 __all__ = [
-    "parse_into_expr",
     "build_expressions_from_patsy_formula",
+    "parse_into_expr",
     "timer",
 ]
 
@@ -81,8 +81,7 @@ def build_expressions_from_patsy_formula(
         import patsy as pa
     except ImportError as e:
         raise NotImplementedError(
-            "'patsy' needs to be installed in your python environment in order to use "
-            "formula api"
+            "'patsy' needs to be installed in your python environment in order to use formula api"
         ) from e
     desc = pa.ModelDesc.from_formula(formula)
 

@@ -306,14 +306,15 @@ def compute_multi_target_least_squares(
     )
     msg = "Consider running multiple independent regressions on a multi-expression target!"
     assert multi_target_conditions, (
-        "Multi-target regression is only supported " "for unconstrained OLS & Ridge problems." + msg
+        "Multi-target regression is only supported for unconstrained OLS & Ridge problems." + msg
     )
-    assert ols_kwargs.solve_method in {"svd", None}, (
-        "only solve_method='svd' is supported for " "multi-target regressions"
-    )
+    assert ols_kwargs.solve_method in {
+        "svd",
+        None,
+    }, "only solve_method='svd' is supported for multi-target regressions"
     if mode == "coefficients":
         raise NotImplementedError(
-            "Only mode={'predictions', 'residuals'} " "is currently supported. " + msg
+            "Only mode={'predictions', 'residuals'} is currently supported. " + msg
         )
 
     return _register_least_squares_plugin(

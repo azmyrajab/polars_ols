@@ -21,12 +21,12 @@ from polars_ols.least_squares import (
 from polars_ols.utils import build_expressions_from_patsy_formula
 
 __all__ = [
+    "LeastSquares",
     "compute_least_squares",
+    "compute_least_squares_from_formula",
+    "compute_multi_target_least_squares",
     "compute_recursive_least_squares",
     "compute_rolling_least_squares",
-    "compute_multi_target_least_squares",
-    "compute_least_squares_from_formula",
-    "LeastSquares",
 ]
 
 ExprOrStr = Union[pl.Expr, str]

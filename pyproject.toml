@@ -80,6 +80,9 @@ lint.ignore = [
   "F403",
   "F401",
   "ISC001",
+  "PGH004",
+  "PLC0415",
+  "RUF022",
 ]
 lint.pylint.max-args = 9
 

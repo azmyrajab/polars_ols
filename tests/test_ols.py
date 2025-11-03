@@ -1034,7 +1034,8 @@ def test_least_squares_statistics():
 #     with pl.Config(verbose=True):
 #         df = _make_data()
 #         statistics = df.with_columns(pl.lit(0.0).alias("x0")).select(
-#             pl.col("y").least_squares.ols(cs.starts_with("x"), mode="statistics", add_intercept=True)
+#             pl.col("y").least_squares.ols(cs.starts_with("x"), mode="statistics",
+#             add_intercept=True)
 #         )
 #         statistics = statistics.unnest("statistics")
 #
