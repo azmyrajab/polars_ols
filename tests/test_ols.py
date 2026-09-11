@@ -348,9 +348,9 @@ def test_fit_multi_collinear(n_features: int, solve_method: str):
     coef_expected = np.linalg.lstsq(x, y, rcond=1.0e-16)[0]  # similar to -1 (machine precision)
 
     if solve_method == "svd":
-        assert np.allclose(
-            coef, coef_expected, rtol=1.0e-2, atol=1.0e-2
-        ), f"norm coef={np.linalg.norm(coef)}, norm expected: {np.linalg.norm(coef_expected)}"
+        assert np.allclose(coef, coef_expected, rtol=1.0e-2, atol=1.0e-2), (
+            f"norm coef={np.linalg.norm(coef)}, norm expected: {np.linalg.norm(coef_expected)}"
+        )
         assert np.allclose(x @ coef, x @ coef_expected, rtol=1.0e-4, atol=1.0e-4)
     else:
         assert ~np.isnan(coef).any()
@@ -772,6 +772,341 @@ def test_rolling_least_squares(window_size: int, min_periods: int, use_woodbury:
     )
 
 
+def _window_residuals_expected(
+    df: pl.DataFrame,
+    *,
+    window_size: int,
+    feature_columns: Tuple[str, ...],
+    add_intercept: bool = False,
+):
+    regression_columns = ["y", *feature_columns]
+    is_valid = df.select(
+        pl.all_horizontal(pl.col(regression_columns).is_not_null()).alias("_is_valid")
+    )["_is_valid"].to_list()
+    y = np.array(df["y"].to_list(), dtype=float)
+    x = np.column_stack([np.array(df[column].to_list(), dtype=float) for column in feature_columns])
+    if add_intercept:
+        x = np.column_stack([x, np.ones(len(df))])
+
+    expected = [None] * len(df)
+    for end in range(window_size - 1, len(df)):
+        start = end + 1 - window_size
+        if not all(is_valid[start : end + 1]):
+            continue
+        x_window = x[start : end + 1]
+        y_window = y[start : end + 1]
+        beta = np.linalg.lstsq(x_window, y_window, rcond=None)[0]
+        expected[end] = y_window - x_window @ beta
+    return expected
+
+
+def _assert_window_residuals_match(actual, expected, window_size: int):
+    assert len(actual) == len(expected)
+    for index in range(len(actual)):
+        actual_window = actual[index]
+        expected_window = expected[index]
+        if expected_window is None:
+            assert actual_window is None, f"expected row {index} to be null"
+        else:
+            assert actual_window is not None, f"expected row {index} to contain residuals"
+            assert len(actual_window) == window_size
+            assert np.allclose(actual_window, expected_window, rtol=1.0e-10, atol=1.0e-10)
+
+
+def test_rolling_window_residuals_exact_vectors():
+    window_size = 4
+    df = pl.DataFrame(
+        {
+            "y": [1.0, 2.5, 0.7, 4.2, 3.8, 7.1, 6.4, 9.9, 13.2, 11.7],
+            "x1": [0.0, 1.0, 2.0, 3.0, 5.0, 8.0, 13.0, 21.0, 34.0, 55.0],
+            "x2": [1.0, 0.0, 1.0, 0.0, 1.5, 0.5, 2.0, 1.0, 3.0, 2.5],
+        }
+    )
+
+    actual = df.select(
+        pl.col("y")
+        .least_squares.rolling_ols(
+            "x1",
+            "x2",
+            window_size=window_size,
+            min_periods=window_size,
+            null_policy="ignore",
+            mode="window_residuals",
+        )
+        .alias("window_residuals")
+    )["window_residuals"]
+
+    assert actual.dtype == pl.List(pl.Float64)
+    expected = _window_residuals_expected(df, window_size=window_size, feature_columns=("x1", "x2"))
+    _assert_window_residuals_match(actual.to_list(), expected, window_size)
+
+
+def test_rolling_window_residuals_intercept():
+    window_size = 4
+    df = pl.DataFrame(
+        {
+            "y": [3.0, 2.0, 5.5, 4.1, 8.2, 7.4, 9.3, 12.0, 10.8, 15.1],
+            "x1": [-2.0, -1.0, 0.5, 1.5, 2.5, 4.0, 6.5, 7.5, 9.0, 11.0],
+            "x2": [4.0, 1.0, 3.0, 2.0, 5.0, 4.5, 8.0, 7.0, 9.5, 11.0],
+        }
+    )
+
+    actual = df.select(
+        pl.col("y")
+        .least_squares.rolling_ols(
+            "x1",
+            "x2",
+            add_intercept=True,
+            window_size=window_size,
+            min_periods=window_size,
+            null_policy="ignore",
+            mode="window_residuals",
+        )
+        .alias("window_residuals")
+    )["window_residuals"]
+
+    expected = _window_residuals_expected(
+        df,
+        window_size=window_size,
+        feature_columns=("x1", "x2"),
+        add_intercept=True,
+    )
+    _assert_window_residuals_match(actual.to_list(), expected, window_size)
+
+
+def test_rolling_window_residuals_over_groups():
+    window_size = 4
+    df = pl.DataFrame(
+        {
+            "group": ["a"] * 6 + ["b"] * 6,
+            "y": [1.0, 2.0, 1.4, 4.2, 3.6, 5.0, 10.0, 8.5, 11.2, 13.4, 12.1, 15.8],
+            "x1": [0.0, 1.0, 2.0, 4.0, 7.0, 11.0, -3.0, -1.0, 0.0, 2.0, 5.0, 9.0],
+            "x2": [1.0, 0.5, 1.5, 2.5, 4.0, 5.5, 3.0, 2.0, 4.5, 5.0, 7.0, 8.5],
+        }
+    )
+
+    out = df.with_columns(
+        pl.col("y")
+        .least_squares.rolling_ols(
+            "x1",
+            "x2",
+            add_intercept=True,
+            window_size=window_size,
+            min_periods=window_size,
+            null_policy="ignore",
+            mode="window_residuals",
+        )
+        .over("group")
+        .alias("window_residuals")
+    )
+
+    assert out.height == df.height
+    assert out["window_residuals"].dtype == pl.List(pl.Float64)
+    for group in ("a", "b"):
+        group_df = df.filter(pl.col("group") == group)
+        group_out = out.filter(pl.col("group") == group)
+        expected = _window_residuals_expected(
+            group_df,
+            window_size=window_size,
+            feature_columns=("x1", "x2"),
+            add_intercept=True,
+        )
+        _assert_window_residuals_match(
+            group_out["window_residuals"].to_list(), expected, window_size
+        )
+
+
+def test_rolling_window_residuals_drop_window_nulls():
+    window_size = 4
+    df = pl.DataFrame(
+        {
+            "group": ["a"] * 7 + ["b"] * 6,
+            "y": [1.0, 2.0, None, 4.2, 3.6, 5.0, 6.1, 10.0, 8.5, 11.2, 13.4, 12.1, 15.8],
+            "x1": [0.0, 1.0, 2.0, 4.0, 7.0, 11.0, 16.0, -3.0, -1.0, 0.0, 2.0, 5.0, 9.0],
+            "x2": [1.0, 0.5, 1.5, 2.5, 4.0, 5.5, 7.0, 3.0, 2.0, 4.5, 5.0, 7.0, 8.5],
+        }
+    )
+
+    out = df.with_columns(
+        pl.col("y")
+        .least_squares.rolling_ols(
+            "x1",
+            "x2",
+            add_intercept=True,
+            window_size=window_size,
+            min_periods=window_size,
+            null_policy="drop_window",
+            mode="window_residuals",
+        )
+        .over("group")
+        .alias("window_residuals")
+    )
+
+    assert out["window_residuals"].dtype == pl.List(pl.Float64)
+    assert [
+        None if residuals is None else len(residuals)
+        for residuals in out["window_residuals"].to_list()
+    ] == [None, None, None, None, None, None, 4, None, None, None, 4, 4, 4]
+
+    for group in ("a", "b"):
+        group_df = df.filter(pl.col("group") == group)
+        group_out = out.filter(pl.col("group") == group)
+        expected = _window_residuals_expected(
+            group_df,
+            window_size=window_size,
+            feature_columns=("x1", "x2"),
+            add_intercept=True,
+        )
+        _assert_window_residuals_match(
+            group_out["window_residuals"].to_list(), expected, window_size
+        )
+
+
+def test_rolling_window_residuals_drop_window_all_null_group_dtype():
+    df = pl.DataFrame(
+        {
+            "group": ["a"] * 4 + ["b"] * 4,
+            "y": [None, 2.0, 3.0, 4.0, 10.0, 8.5, 11.2, 13.4],
+            "x1": [0.0, 1.0, 2.0, 4.0, -3.0, -1.0, 0.0, 2.0],
+            "x2": [1.0, 0.5, 1.5, 2.5, 3.0, 2.0, 4.5, 5.0],
+        }
+    )
+
+    out = df.with_columns(
+        pl.col("y")
+        .least_squares.rolling_ols(
+            "x1",
+            "x2",
+            add_intercept=True,
+            window_size=4,
+            min_periods=4,
+            null_policy="drop_window",
+            mode="window_residuals",
+        )
+        .over("group")
+        .alias("window_residuals")
+    )
+
+    assert out["window_residuals"].dtype == pl.List(pl.Float64)
+    assert out.filter(pl.col("group") == "a")["window_residuals"].to_list() == [
+        None,
+        None,
+        None,
+        None,
+    ]
+
+
+def test_rolling_ols_existing_modes_unchanged():
+    window_size = 4
+    df = pl.DataFrame(
+        {
+            "y": [1.0, 2.5, 0.7, 4.2, 3.8, 7.1, 6.4, 9.9, 13.2, 11.7],
+            "x1": [0.0, 1.0, 2.0, 3.0, 5.0, 8.0, 13.0, 21.0, 34.0, 55.0],
+            "x2": [1.0, 0.0, 1.0, 0.0, 1.5, 0.5, 2.0, 1.0, 3.0, 2.5],
+        }
+    )
+
+    predictions = df.select(
+        pl.col("y")
+        .least_squares.rolling_ols(
+            "x1",
+            "x2",
+            window_size=window_size,
+            min_periods=window_size,
+            null_policy="ignore",
+            mode="predictions",
+        )
+        .alias("predictions")
+    )["predictions"]
+    residuals = df.select(
+        pl.col("y")
+        .least_squares.rolling_ols(
+            "x1",
+            "x2",
+            window_size=window_size,
+            min_periods=window_size,
+            null_policy="ignore",
+            mode="residuals",
+        )
+        .alias("residuals")
+    )["residuals"]
+    coefficients = (
+        df.select(
+            pl.col("y")
+            .least_squares.rolling_ols(
+                "x1",
+                "x2",
+                window_size=window_size,
+                min_periods=window_size,
+                null_policy="ignore",
+                mode="coefficients",
+            )
+            .alias("coefficients")
+        )
+        .unnest("coefficients")
+        .to_numpy()
+    )
+
+    y = df["y"].to_numpy()
+    x = df.select("x1", "x2").to_numpy()
+    expected_predictions = np.full(len(df), np.nan)
+    expected_residuals = np.full(len(df), np.nan)
+    expected_coefficients = np.full((len(df), 2), np.nan)
+    for end in range(window_size - 1, len(df)):
+        start = end + 1 - window_size
+        beta = np.linalg.lstsq(x[start : end + 1], y[start : end + 1], rcond=None)[0]
+        expected_coefficients[end] = beta
+        expected_predictions[end] = x[end] @ beta
+        expected_residuals[end] = y[end] - expected_predictions[end]
+
+    assert predictions.dtype == pl.Float64
+    assert residuals.dtype == pl.Float64
+    assert np.allclose(predictions.to_numpy(), expected_predictions, equal_nan=True)
+    assert np.allclose(residuals.to_numpy(), expected_residuals, equal_nan=True)
+    assert np.allclose(coefficients, expected_coefficients, equal_nan=True)
+
+
+def test_rolling_window_residuals_rejects_unsupported_options():
+    df = pl.DataFrame({"y": [1.0, 2.0, 3.0, 4.0], "x": [1.0, 2.0, 4.0, 8.0]})
+
+    with pytest.raises(NotImplementedError, match="sample_weights=None"):
+        df.select(
+            pl.col("y").least_squares.rolling_ols(
+                "x",
+                sample_weights=pl.lit(1.0),
+                window_size=4,
+                min_periods=4,
+                null_policy="ignore",
+                mode="window_residuals",
+            )
+        )
+
+    with pytest.raises(
+        NotImplementedError,
+        match="null_policy='ignore' or null_policy='drop_window'",
+    ):
+        df.select(
+            pl.col("y").least_squares.rolling_ols(
+                "x",
+                window_size=4,
+                min_periods=4,
+                null_policy="drop",
+                mode="window_residuals",
+            )
+        )
+
+    with pytest.raises(NotImplementedError, match="min_periods to equal window_size"):
+        df.select(
+            pl.col("y").least_squares.rolling_ols(
+                "x",
+                window_size=4,
+                min_periods=3,
+                null_policy="ignore",
+                mode="window_residuals",
+            )
+        )
+
+
 @pytest.mark.parametrize(
     "min_periods,expected",
     [
@@ -886,7 +1221,13 @@ def test_moving_window_regressions_over():
 
     # As of the last sample per group: RLS & rolling regression should behave identically
     # to full sample OLS per group (the way they were set up above)
-    df_last = df.group_by("group").last()
+    df_indexed = df.with_row_index()
+    df_last = (
+        df_indexed.group_by("group")
+        .agg(pl.col("index").max())
+        .join(df_indexed, on=["group", "index"])
+        .drop("index")
+    )
 
     assert np.allclose(
         df_last.unnest("coef_ols_group").select("x1", "x2"),

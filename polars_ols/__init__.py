@@ -9,6 +9,7 @@ from polars_ols.least_squares import (
     OLSKwargs,
     OutputMode,
     RLSKwargs,
+    RollingOutputMode,
     RollingKwargs,
     SolveMethod,
     compute_least_squares,
@@ -208,7 +209,7 @@ class LeastSquares:
         window_size: int,
         sample_weights: Optional[ExprOrStr] = None,
         add_intercept: bool = False,
-        mode: OutputMode = "predictions",
+        mode: RollingOutputMode = "predictions",
         null_policy: NullPolicy = "drop",
         min_periods: Optional[int] = None,
         use_woodbury: Optional[bool] = None,
@@ -220,7 +221,8 @@ class LeastSquares:
         :param features: Variable number of feature expressions.
         :param sample_weights: Optional expression representing sample weights.
         :param add_intercept: Whether to add an intercept column.
-        :param mode: Mode of operation ("predictions", "residuals", "coefficients").
+        :param mode: Mode of operation ("predictions", "residuals", "coefficients",
+                     "window_residuals").
         :param null_policy: Strategy for handling missing data. See `NullPolicy` for all options.
             Specific to the rolling window context:
                 - "drop_window": This policy is specific to rolling ols. For every fixed rolling

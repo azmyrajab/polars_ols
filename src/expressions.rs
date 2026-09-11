@@ -1,7 +1,7 @@
 #![allow(clippy::unit_arg, clippy::unused_unit)]
 
 use ndarray::{s, Array, Array1, Array2, Axis};
-use polars::datatypes::{DataType, Field, Float64Type};
+use polars::datatypes::{DataType, Field, Float64Type, ListChunked};
 use polars::error::{polars_err, PolarsResult};
 use polars::frame::DataFrame;
 use polars::prelude::{
@@ -107,6 +107,13 @@ fn coefficients_struct_dtype(input_fields: &[Field]) -> PolarsResult<Field> {
     Ok(Field::new(
         "coefficients",
         DataType::Struct(input_fields[1..].to_vec()),
+    ))
+}
+
+fn window_residuals_dtype(_input_fields: &[Field]) -> PolarsResult<Field> {
+    Ok(Field::new(
+        "window_residuals",
+        DataType::List(Box::new(DataType::Float64)),
     ))
 }
 
@@ -698,6 +705,111 @@ fn rolling_least_squares(inputs: &[Series], kwargs: RollingKwargs) -> PolarsResu
         is_valid.as_ref(),
         inputs[0].name(),
     ))
+}
+
+#[polars_expr(output_type_func=window_residuals_dtype)]
+fn rolling_least_squares_window_residuals(
+    inputs: &[Series],
+    kwargs: RollingKwargs,
+) -> PolarsResult<Series> {
+    let null_policy = kwargs.get_null_policy();
+    if !matches!(null_policy, NullPolicy::Ignore | NullPolicy::DropWindow) {
+        return Err(polars_err!(
+            InvalidOperation:
+            "mode='window_residuals' currently supports only null_policy='ignore' \
+             or null_policy='drop_window'"
+        ));
+    }
+
+    let min_periods = kwargs.min_periods.unwrap_or(0);
+    if min_periods != kwargs.window_size {
+        return Err(polars_err!(
+            InvalidOperation:
+            "mode='window_residuals' currently requires min_periods to equal window_size"
+        ));
+    }
+
+    if null_policy == NullPolicy::Ignore && inputs.iter().any(|s| s.null_count() > 0) {
+        return Err(polars_err!(
+            InvalidOperation:
+            "mode='window_residuals' with null_policy='ignore' requires inputs with no nulls; \
+             use null_policy='drop_window' to return null for incomplete windows"
+        ));
+    }
+
+    let is_valid = if null_policy == NullPolicy::DropWindow {
+        let is_valid_mask = compute_is_valid_mask(inputs, &null_policy, None);
+        convert_is_valid_mask_to_vec(&is_valid_mask, inputs[0].len())
+    } else {
+        vec![true; inputs[0].len()]
+    };
+    let (y, x) = convert_polars_to_ndarray(inputs, &NullPolicy::Zero, None);
+    let n = y.len();
+    let window_size = kwargs.window_size;
+    let solver_is_valid = vec![true; n];
+    let coefficients = solve_rolling_ols(
+        &y,
+        &x,
+        window_size,
+        kwargs.min_periods,
+        kwargs.use_woodbury,
+        kwargs.alpha,
+        &solver_is_valid,
+        NullPolicy::Ignore,
+    );
+
+    if n < window_size {
+        return Ok(ListChunked::full_null_with_dtype(
+            inputs[0].name().into(),
+            n,
+            &DataType::Float64,
+        )
+        .into_series());
+    }
+
+    let mut residual_windows: Vec<Option<Series>> = Vec::with_capacity(n);
+    let mut has_valid_window = false;
+    for i in 0..n {
+        if i + 1 < window_size {
+            residual_windows.push(None);
+            continue;
+        }
+
+        let beta = coefficients.row(i);
+        if !beta.iter().all(|value| value.is_finite()) {
+            residual_windows.push(None);
+            continue;
+        }
+
+        let window_start = i + 1 - window_size;
+        if !is_valid[window_start..i + 1].iter().all(|valid| *valid) {
+            residual_windows.push(None);
+            continue;
+        }
+
+        let x_window = x.slice(s![window_start..i + 1, ..]);
+        let y_window = y.slice(s![window_start..i + 1]);
+        let predictions = x_window.dot(&beta);
+        let residuals = (&y_window - &predictions).to_vec();
+        has_valid_window = true;
+        residual_windows.push(Some(Series::from_vec("", residuals)));
+    }
+
+    if !has_valid_window {
+        return Ok(ListChunked::full_null_with_dtype(
+            inputs[0].name().into(),
+            n,
+            &DataType::Float64,
+        )
+        .into_series());
+    }
+
+    let series = residual_windows
+        .into_iter()
+        .collect::<ListChunked>()
+        .into_series()
+        .with_name(inputs[0].name());
+    Ok(series)
 }
 
 /// This function provides a convenience expression to multiply fitted coefficients with features,

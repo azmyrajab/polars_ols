@@ -41,6 +41,7 @@ __all__ = [
     # types controlling general modelling behaviour
     "NullPolicy",
     "OutputMode",
+    "RollingOutputMode",
     "SolveMethod",
 ]
 
@@ -55,10 +56,12 @@ NullPolicy = Literal[
     # with nulls to be omitted and only valid observations within the fixed window are used.
 ]
 OutputMode = Literal["predictions", "residuals", "coefficients", "statistics"]
+RollingOutputMode = Literal["predictions", "residuals", "coefficients", "window_residuals"]
 SolveMethod = Literal["qr", "svd", "chol", "lu", "cd", "cd_active_set"]
 
 _VALID_NULL_POLICIES: Set[NullPolicy] = set(get_args(NullPolicy))
 _VALID_OUTPUT_MODES: Set[OutputMode] = set(get_args(OutputMode))
+_VALID_ROLLING_OUTPUT_MODES: Set[RollingOutputMode] = set(get_args(RollingOutputMode))
 _VALID_SOLVE_METHODS: Set[SolveMethod] = set(get_args(SolveMethod)).union({None})
 _EPSILON: float = 1.0e-12
 
@@ -72,9 +75,9 @@ class Kwargs:
 
     def __post_init__(self):
         # rust code does validate all options, but prefer to fail, on some, early
-        assert (
-            self.null_policy in _VALID_NULL_POLICIES
-        ), f"'null_policy' must be one of {_VALID_NULL_POLICIES}. You passed: {self.null_policy}"
+        assert self.null_policy in _VALID_NULL_POLICIES, (
+            f"'null_policy' must be one of {_VALID_NULL_POLICIES}. You passed: {self.null_policy}"
+        )
 
 
 @dataclass
@@ -110,12 +113,12 @@ class OLSKwargs(Kwargs):
         # rust code does validate all options, but prefer to fail, on some, early
         valid_ols_policies = _VALID_NULL_POLICIES - {"drop_window"}
         # 'drop_window' is specific to rolling window models.
-        assert (
-            self.null_policy in valid_ols_policies
-        ), f"'null_policy' must be one of {valid_ols_policies}. You passed: {self.null_policy}"
-        assert (
-            self.solve_method in _VALID_SOLVE_METHODS
-        ), f"'solve_method' must be one of {_VALID_SOLVE_METHODS}. You passed: {self.solve_method}"
+        assert self.null_policy in valid_ols_policies, (
+            f"'null_policy' must be one of {valid_ols_policies}. You passed: {self.null_policy}"
+        )
+        assert self.solve_method in _VALID_SOLVE_METHODS, (
+            f"'solve_method' must be one of {_VALID_SOLVE_METHODS}. You passed: {self.solve_method}"
+        )
 
 
 @dataclass
@@ -199,7 +202,7 @@ def _pre_process_data(
 def _register_least_squares_plugin(
     target: ExprOrStr,
     *features: ExprOrStr,
-    mode: OutputMode,
+    mode: Union[OutputMode, RollingOutputMode],
     function_name: str,
     ols_kwargs: Kwargs,
     returns_scalar_coefficients: bool = False,
@@ -374,7 +377,7 @@ def compute_rolling_least_squares(
     *features: ExprOrStr,
     sample_weights: Optional[ExprOrStr] = None,
     add_intercept: bool = False,
-    mode: OutputMode = "predictions",
+    mode: RollingOutputMode = "predictions",
     rolling_kwargs: Optional[RollingKwargs] = None,
 ) -> pl.Expr:
     """Performs least squares regression in a rolling window fashion.
@@ -384,16 +387,47 @@ def compute_rolling_least_squares(
         *features: Variable number of feature expressions.
         sample_weights: Optional expression representing sample weights.
         add_intercept: Whether to add an intercept column.
-        mode: Mode of operation ("predictions", "residuals", "coefficients").
+        mode: Mode of operation ("predictions", "residuals", "coefficients",
+              "window_residuals").
         rolling_kwargs: Additional keyword arguments for the rolling least squares model.
                         See RollingKwargs.
 
     Returns:
         Resulting expression based on the chosen mode.
     """
-    valid_output_modes = _VALID_OUTPUT_MODES - {"statistics"}
+    valid_output_modes = _VALID_ROLLING_OUTPUT_MODES
     assert mode in valid_output_modes, f"'mode' must be one of {valid_output_modes}"
     rolling_kwargs: RollingKwargs = rolling_kwargs or RollingKwargs()
+
+    if mode == "window_residuals":
+        if sample_weights is not None:
+            raise NotImplementedError(
+                "mode='window_residuals' currently supports only sample_weights=None."
+            )
+        if rolling_kwargs.null_policy not in {"ignore", "drop_window"}:
+            raise NotImplementedError(
+                "mode='window_residuals' currently supports only null_policy='ignore' "
+                "or null_policy='drop_window'."
+            )
+        if rolling_kwargs.min_periods != rolling_kwargs.window_size:
+            raise NotImplementedError(
+                "mode='window_residuals' currently requires min_periods to equal window_size."
+            )
+        target_fit, features_fit, _ = _pre_process_data(
+            target,
+            *features,
+            sample_weights=None,
+            add_intercept=add_intercept,
+        )
+        return register_plugin_function(
+            plugin_path=Path(__file__).parent,
+            function_name="rolling_least_squares_window_residuals",
+            args=[target_fit, *features_fit],
+            kwargs=rolling_kwargs.to_dict(),
+            is_elementwise=False,
+            input_wildcard_expansion=True,
+        )
+
     # register either coefficient or prediction plugin functions
     expr = _register_least_squares_plugin(
         target,

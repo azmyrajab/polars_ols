@@ -13,7 +13,6 @@ mod statistics;
 #[cfg(test)]
 mod tests {
     use ndarray::prelude::*;
-    use ndarray_linalg::assert_close_l2;
     use ndarray_rand::rand_distr::Normal;
     use ndarray_rand::RandomExt;
     use polars::datatypes::DataType::Float64;
@@ -44,14 +43,37 @@ mod tests {
         convert_polars_to_ndarray(&[y.clone(), x1, x2], &null_policy, None)
     }
 
+    fn assert_close_l2<S1, S2, D>(left: &ArrayBase<S1, D>, right: &ArrayBase<S2, D>, tolerance: f64)
+    where
+        S1: ndarray::Data<Elem = f64>,
+        S2: ndarray::Data<Elem = f64>,
+        D: Dimension,
+    {
+        assert_eq!(
+            left.shape(),
+            right.shape(),
+            "array shapes must match for L2 comparison"
+        );
+        let l2_norm = left
+            .iter()
+            .zip(right.iter())
+            .map(|(left, right)| (left - right).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        assert!(
+            l2_norm <= tolerance,
+            "L2 norm {l2_norm} exceeded tolerance {tolerance}; left={left:?}; right={right:?}"
+        );
+    }
+
     #[test]
     fn test_ols() {
         let (targets, features) = make_data(None);
         let coefficients_1 = solve_ols(&targets, &features, None, None);
         let coefficients_2 = solve_ols(&targets, &features, Some(SolveMethod::SVD), None);
         let expected = array![1., 1.];
-        assert_close_l2!(&coefficients_1, &coefficients_2, 0.001);
-        assert_close_l2!(&coefficients_1, &expected, 0.001);
+        assert_close_l2(&coefficients_1, &coefficients_2, 0.001);
+        assert_close_l2(&coefficients_1, &expected, 0.001);
     }
 
     #[test]
@@ -60,8 +82,8 @@ mod tests {
         let coefficients_1 = solve_ridge(&targets, &features, 10.0, None, None);
         let coefficients_2 = solve_ridge(&targets, &features, 10.0, Some(SolveMethod::SVD), None);
         let expected = array![0.999, 0.999];
-        assert_close_l2!(&coefficients_1, &coefficients_2, 0.001);
-        assert_close_l2!(&coefficients_1, &expected, 0.001);
+        assert_close_l2(&coefficients_1, &coefficients_2, 0.001);
+        assert_close_l2(&coefficients_1, &expected, 0.001);
     }
 
     #[test]
@@ -78,7 +100,7 @@ mod tests {
             None,
         );
         let expected = array![0.999, 0.999];
-        assert_close_l2!(&coefficients, &expected, 0.001);
+        assert_close_l2(&coefficients, &expected, 0.001);
     }
 
     #[test]
@@ -97,7 +119,7 @@ mod tests {
         let expected = array![1.0, 1.0];
         println!("{:?}", coefficients.slice(s![0, ..]));
         println!("{:?}", coefficients.slice(s![-1, ..]));
-        assert_close_l2!(&coefficients.slice(s![-1, ..]), &expected, 0.0001);
+        assert_close_l2(&coefficients.slice(s![-1, ..]), &expected, 0.0001);
     }
 
     #[test]
@@ -118,7 +140,7 @@ mod tests {
         let expected: Array1<f64> = array![1.0, 1.0];
         println!("{:?}", coefficients.slice(s![0, ..]));
         println!("{:?}", coefficients.slice(s![-1, ..]));
-        assert_close_l2!(&coefficients.slice(s![-1, ..]), &expected, 0.0001);
+        assert_close_l2(&coefficients.slice(s![-1, ..]), &expected, 0.0001);
     }
 
     #[test]
@@ -139,7 +161,7 @@ mod tests {
         // test confirms: inv(A + UCV) == A{-1} - A^{-1} U (C^{-1} + V A^{-1} U)^{-1} V A^{-1}
 
         // Compare with expected result
-        assert_close_l2!(&result, &expected_result, 0.00001);
+        assert_close_l2(&result, &expected_result, 0.00001);
     }
 
     #[test]
@@ -167,7 +189,7 @@ mod tests {
             &(&xtx - &outer_product(&x_old, &x_old) + &outer_product(&x_new, &x_new)),
             true,
         );
-        assert_close_l2!(&xtx_inv, &expected, 0.00001);
+        assert_close_l2(&xtx_inv, &expected, 0.00001);
     }
 }
 
