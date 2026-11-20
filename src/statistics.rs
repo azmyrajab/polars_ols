@@ -12,8 +12,21 @@ pub struct ResidualMetrics {
 
 /// Computes the Mean Squared Error (MSE), Mean Absolute Error (MAE), and
 /// R-squared (R2) coefficient of determination between actual and predicted values.
-pub fn compute_residual_metrics(targets: &Array1<f64>, predicted: &Array1<f64>) -> ResidualMetrics {
-    let mean = targets.mean().unwrap_or(0.0);
+///
+/// For weighted least squares, `targets` and `predicted` are scaled by sqrt(sample weights) and
+/// `sqrt_weights` must hold those scaling factors, so that R2 uses the weighted total sum of
+/// squares of the unscaled targets around their weighted mean.
+pub fn compute_residual_metrics(
+    targets: &Array1<f64>,
+    predicted: &Array1<f64>,
+    sqrt_weights: Option<&Array1<f64>>,
+) -> ResidualMetrics {
+    // with targets = sqrt(w) * y: sum(w * (y - mean_w)^2) = sum((targets - sqrt(w) * mean_w)^2),
+    // where mean_w = sum(w * y) / sum(w) = sum(sqrt(w) * targets) / sum(sqrt(w)^2)
+    let mean = match sqrt_weights {
+        Some(sqrt_w) => sqrt_w.dot(targets) / sqrt_w.dot(sqrt_w),
+        None => targets.mean().unwrap_or(0.0),
+    };
     let mut sum_sq_error = 0.0;
     let mut sum_abs_error = 0.0;
     let mut sum_sq_total = 0.0;
@@ -22,9 +35,10 @@ pub fn compute_residual_metrics(targets: &Array1<f64>, predicted: &Array1<f64>) 
         let actual = targets[i];
         let pred = predicted[i];
         let error = actual - pred;
+        let centre = sqrt_weights.map_or(mean, |sqrt_w| sqrt_w[i] * mean);
         sum_sq_error += error.powi(2);
         sum_abs_error += error.abs();
-        sum_sq_total += (actual - mean).powi(2);
+        sum_sq_total += (actual - centre).powi(2);
     }
 
     let mse = sum_sq_error / targets.len() as f64;

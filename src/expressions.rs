@@ -305,6 +305,8 @@ pub struct OLSKwargs {
     solve_method: Option<String>,
     null_policy: Option<String>,
     rcond: Option<f64>,
+    // set by the python layer for weighted statistics: sqrt(sample weights) is the last input
+    has_sample_weights: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -469,16 +471,30 @@ fn statistics_struct_dtype(_input_fields: &[Field]) -> PolarsResult<Field> {
 fn least_squares_statistics(inputs: &[Series], kwargs: OLSKwargs) -> PolarsResult<Series> {
     let null_policy = kwargs.get_null_policy();
     let is_valid = compute_is_valid_mask(inputs, &null_policy, None);
-    let (y_fit, x_fit) = convert_polars_to_ndarray(inputs, &null_policy, is_valid.as_ref());
+    let (y_fit, x) = convert_polars_to_ndarray(inputs, &null_policy, is_valid.as_ref());
+
+    // for weighted regressions the last input holds sqrt(sample weights), which is never null
+    // (so null handling is unaffected); split it off from the features.
+    let has_sample_weights = kwargs.has_sample_weights.unwrap_or(false);
+    let n_features = inputs.len() - 1 - usize::from(has_sample_weights);
+    let (x_fit, sqrt_weights) = if has_sample_weights {
+        let sqrt_weights = x.column(n_features).to_owned();
+        (x.slice(s![.., ..n_features]).to_owned(), Some(sqrt_weights))
+    } else {
+        (x, None)
+    };
 
     let lambda = kwargs.alpha.unwrap();
     let coefficients = _get_least_squares_coefficients(&y_fit, &x_fit, kwargs);
     let predictions = x_fit.dot(&coefficients);
 
-    let residual_metrics = compute_residual_metrics(&y_fit, &predictions);
+    let residual_metrics = compute_residual_metrics(&y_fit, &predictions, sqrt_weights.as_ref());
     let feature_metrics = compute_feature_metrics(&x_fit, &y_fit, lambda);
 
-    let feature_names: Vec<&str> = inputs[1..].iter().map(|input| input.name()).collect();
+    let feature_names: Vec<&str> = inputs[1..=n_features]
+        .iter()
+        .map(|input| input.name())
+        .collect();
     let feature_names = Series::from_iter(feature_names);
 
     // Create a DataFrame with a single row for the metrics

@@ -211,11 +211,18 @@ def _register_least_squares_plugin(
 
     # register either coefficient or prediction plugin functions
     if mode in {"coefficients", "statistics"}:
+        args = [target_fit, *features_fit]
+        plugin_kwargs = ols_kwargs.to_dict()
+        if mode == "statistics" and sqrt_w is not None:
+            # r2 needs sqrt(sample weights) to compute the weighted total sum of squares;
+            # broadcast it to the length of the target (sample weights may be a scalar)
+            args.append(target.fill_null(0.0).mul(0.0).add(sqrt_w))
+            plugin_kwargs["has_sample_weights"] = True
         return register_plugin_function(
             plugin_path=Path(__file__).parent,
             function_name=f"{function_name}_{mode}",
-            args=[target_fit, *features_fit],
-            kwargs=ols_kwargs.to_dict(),
+            args=args,
+            kwargs=plugin_kwargs,
             is_elementwise=False,
             changes_length=returns_scalar_coefficients,
             returns_scalar=returns_scalar_coefficients,

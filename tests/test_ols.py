@@ -1029,6 +1029,46 @@ def test_least_squares_statistics():
     assert np.allclose(df_stats["p_values"], res.pvalues)
 
 
+@pytest.mark.parametrize("constant_weights", (True, False))
+@pytest.mark.parametrize("null_policy", ("ignore", "drop", "drop_y_zero_x", "zero"))
+def test_least_squares_statistics_weighted(constant_weights: bool, null_policy: NullPolicy):
+    df = _make_data(n_samples=1_000, scale=2.0, add_missing=null_policy != "ignore")
+    rng = np.random.default_rng(1)
+    weights = np.full(len(df), 3.0) if constant_weights else np.exp(2.0 * rng.normal(size=len(df)))
+    # a target far from zero: r2 must be relative to its weighted variance about the weighted mean
+    df = df.with_columns(pl.col("y") + 100.0, weights=pl.lit(weights))
+
+    def compute_statistics(sample_weights: Optional[pl.Expr]) -> pl.DataFrame:
+        return df.select(
+            pl.col("y").least_squares.ols(
+                cs.starts_with("x"),
+                sample_weights=sample_weights,
+                add_intercept=True,
+                null_policy=null_policy,
+                mode="statistics",
+            )
+        ).unnest("statistics")
+
+    if null_policy == "drop":
+        df_fit = df.drop_nulls()
+    elif null_policy == "drop_y_zero_x":
+        df_fit = df.drop_nulls("y").fill_null(0.0)
+    else:
+        df_fit = df.fill_null(0.0)
+    res = smf.wls("y ~ x1 + x2", data=df_fit, weights=df_fit["weights"].to_numpy()).fit()
+
+    statistics = compute_statistics(pl.col("weights"))
+    assert statistics["r2"].item() == pytest.approx(res.rsquared)
+    params = res.params.rename({"Intercept": "const"})
+    assert np.allclose(
+        statistics["coefficients"].item(), params[statistics["feature_names"].item().to_list()]
+    )
+    if constant_weights:
+        r2_unweighted = compute_statistics(None)["r2"].item()
+        assert statistics["r2"].item() == pytest.approx(r2_unweighted)
+        assert compute_statistics(pl.lit(3.0))["r2"].item() == pytest.approx(r2_unweighted)
+
+
 # TODO(azmy): this test (zeros) fails due to inversion using cholesky; use robust inversion
 # def test_least_squares_statistics_fit_fails():
 #     with pl.Config(verbose=True):
